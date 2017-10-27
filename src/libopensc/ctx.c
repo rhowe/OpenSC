@@ -121,6 +121,9 @@ static const struct _sc_driver_entry internal_card_drivers[] = {
 	{ "jpki",	(void *(*)(void)) sc_get_jpki_driver },
 	{ "coolkey",	(void *(*)(void)) sc_get_coolkey_driver },
 	{ "npa",	(void *(*)(void)) sc_get_npa_driver },
+#ifdef ENABLE_OPENSSL
+	{ "idprimenet",	(void *(*)(void)) sc_get_idprimenet_driver },
+#endif /* ENABLE_OPENSSL */
 	/* The default driver should be last, as it handles all the
 	 * unrecognized cards. */
 	{ "default",	(void *(*)(void)) sc_get_default_driver },

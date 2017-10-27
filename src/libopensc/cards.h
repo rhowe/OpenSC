@@ -245,6 +245,10 @@ enum {
 	SC_CARD_TYPE_NPA = 34000,
 	SC_CARD_TYPE_NPA_TEST,
 	SC_CARD_TYPE_NPA_ONLINE,
+
+	/* Gemalto IDPrime.NET cards */
+	SC_CARD_TYPE_IDPRIMENET_BASE = 35000,
+	SC_CARD_TYPE_IDPRIMENET_GENERIC,
 };
 
 extern sc_card_driver_t *sc_get_default_driver(void);
@@ -287,6 +291,9 @@ extern sc_card_driver_t *sc_get_jpki_driver(void);
 extern sc_card_driver_t *sc_get_coolkey_driver(void);
 extern sc_card_driver_t *sc_get_cac_driver(void);
 extern sc_card_driver_t *sc_get_npa_driver(void);
+#ifdef ENABLE_OPENSSL
+extern sc_card_driver_t *sc_get_idprimenet_driver(void);
+#endif /* ENABLE_OPENSSL */
 
 #ifdef __cplusplus
 }
