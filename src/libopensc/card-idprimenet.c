@@ -36,7 +36,7 @@
 #include "internal.h"
 
 typedef struct {
-	unsigned char port[2];
+	u8 port[2];
 	char *namespace;
 	char *type;
 	char *method;
@@ -46,7 +46,7 @@ typedef struct {
 typedef struct {
 	char *namespace;
 	char *type;
-	unsigned char *data;
+	u8 *data;
 } dotnet_apdu_response_t;
 
 static struct sc_atr_table idprimenet_atrs[] = {
@@ -56,7 +56,7 @@ static struct sc_atr_table idprimenet_atrs[] = {
 
 /* From http://support.gemalto.com/index.php?id=how_i_can_unblock_the_pin */
 /*
-static const unsigned char default_admin_key[] = {
+static const u8 default_admin_key[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -88,7 +88,7 @@ typedef enum {
 typedef struct {
 	idprimenet_namespace_t namespace_id;
 	char *namespace;
-	unsigned char hivecode[4];
+	u8 hivecode[4];
 } idprimenet_namespace_hivecode_t;
 
 /* From page 109 of the IDPrime.NET integration guide */
@@ -183,7 +183,7 @@ typedef enum {
 typedef struct {
 	idprimenet_type_t type;
 	char *type_str;
-	unsigned char hivecode[4];
+	u8 hivecode[4];
 } idprimenet_type_hivecode_t;
 
 /* From page 109 of the IDPrime.NET integration guide */
@@ -265,7 +265,7 @@ typedef struct {
 	char *exception_msg;
 	const idprimenet_namespace_hivecode_t *namespace;
 	idprimenet_type_t data_type;
-	unsigned char *data;
+	u8 *data;
 	size_t data_len;
 } dotnet_op_response_t;
 
@@ -299,7 +299,7 @@ static struct sc_card_driver idprimenet_drv = {
 	NULL, 0, NULL
 };
 
-static int namespace_to_hivecode(const char *namespace, unsigned char hivecode[4]) {
+static int namespace_to_hivecode(const char *namespace, u8 hivecode[4]) {
 	for (unsigned int i = 0; idprimenet_namespace_hivecodes[i].namespace; i++) {
 		if (!strcmp(idprimenet_namespace_hivecodes[i].namespace, namespace)) {
 			hivecode[0] = idprimenet_namespace_hivecodes[i].hivecode[0];
@@ -312,7 +312,7 @@ static int namespace_to_hivecode(const char *namespace, unsigned char hivecode[4
 	return -1;
 }
 
-static const idprimenet_namespace_hivecode_t *hivecode_to_namespace(unsigned char hivecode[4]) {
+static const idprimenet_namespace_hivecode_t *hivecode_to_namespace(u8 hivecode[4]) {
 	for (unsigned int i = 0; idprimenet_namespace_hivecodes[i].namespace; i++) {
 		if (idprimenet_namespace_hivecodes[i].hivecode[0] == hivecode[0]
 		 && idprimenet_namespace_hivecodes[i].hivecode[1] == hivecode[1]
@@ -324,7 +324,7 @@ static const idprimenet_namespace_hivecode_t *hivecode_to_namespace(unsigned cha
 	return NULL;
 }
 
-static const idprimenet_type_hivecode_t * hivecode_to_type(unsigned char hivecode[2]) {
+static const idprimenet_type_hivecode_t * hivecode_to_type(u8 hivecode[2]) {
 	for (unsigned int i = 0; idprimenet_type_hivecodes[i].type != IDPRIME_TYPE_NONE; i++) {
 		if (idprimenet_type_hivecodes[i].hivecode[0] == hivecode[0]
 		 && idprimenet_type_hivecodes[i].hivecode[1] == hivecode[1]) {
@@ -334,7 +334,7 @@ static const idprimenet_type_hivecode_t * hivecode_to_type(unsigned char hivecod
 	return NULL;
 }
 
-static const idprimenet_type_hivecode_t * hivecode_to_exception_type(unsigned char hivecode[2]) {
+static const idprimenet_type_hivecode_t * hivecode_to_exception_type(u8 hivecode[2]) {
 	for (unsigned int i = 0; idprimenet_exception_type_hivecodes[i].type != IDPRIME_TYPE_NONE; i++) {
 		if (idprimenet_exception_type_hivecodes[i].hivecode[0] == hivecode[0]
 		 && idprimenet_exception_type_hivecodes[i].hivecode[1] == hivecode[1]) {
@@ -361,12 +361,12 @@ p107 of the IDPrime.NET Smart Card Integration Guide says:
 	of 61C1
 */
 
-static int type_to_hivecode(const char *type, unsigned char hivecode[2]) {
+static int type_to_hivecode(const char *type, u8 hivecode[2]) {
 	EVP_MD_CTX *mdctx;
 	const EVP_MD *md;
-	unsigned char md_value[EVP_MAX_MD_SIZE];
+	u8 md_value[EVP_MAX_MD_SIZE];
 	unsigned int md_len;
-	unsigned char is_array;
+	u8 is_array;
 	const char *hivetype = strrchr(type, '.');
 	size_t type_len;
 
@@ -392,10 +392,10 @@ static int type_to_hivecode(const char *type, unsigned char hivecode[2]) {
 	return 0;
 }
 
-static int method_to_hivecode(const char *method, unsigned char hivecode[2]) {
+static int method_to_hivecode(const char *method, u8 hivecode[2]) {
 	EVP_MD_CTX *mdctx;
 	const EVP_MD *md;
-	unsigned char md_value[EVP_MAX_MD_SIZE];
+	u8 md_value[EVP_MAX_MD_SIZE];
 	unsigned int md_len;
 
 	if (!method) return 1;
@@ -414,11 +414,11 @@ static int method_to_hivecode(const char *method, unsigned char hivecode[2]) {
 	return 0;
 }
 
-static size_t idprimenet_apdu_strlen(const unsigned char *data) {
+static size_t idprimenet_apdu_strlen(const u8 *data) {
 	return (data[0] << 8) | data[1];
 }
 
-static int idprimenet_apdu_to_string(const unsigned char *data, size_t data_len, char *dest, size_t *dest_len) {
+static int idprimenet_apdu_to_string(const u8 *data, size_t data_len, char *dest, size_t *dest_len) {
 	/* dest needs to be at least data_len+1 in size */
 	if (data_len >= *dest_len) {
 		printf("Buffer isn't big enough for string");
@@ -432,9 +432,9 @@ static int idprimenet_apdu_to_string(const unsigned char *data, size_t data_len,
 }
 
 static int idprimenet_apdu_to_u1array(
-		const unsigned char *data,
+		const u8 *data,
 		size_t data_len,
-		unsigned char *dest,
+		u8 *dest,
 		size_t *dest_len) {
 	size_t array_len;
 
@@ -457,7 +457,7 @@ static int idprimenet_apdu_to_u1array(
 }
 
 static int idprimenet_apdu_to_s4array(
-		const unsigned char *data,
+		const u8 *data,
 		size_t data_len,
 		int *dest,
 		size_t *dest_len) {
@@ -488,10 +488,10 @@ static int idprimenet_apdu_to_s4array(
 
 static sc_apdu_t *dotnet_op_to_apdu(struct sc_card *card, const dotnet_op_t *op) {
 	unsigned int service_len;
-	unsigned char namespace[4], type[2], method[2];
+	u8 namespace[4], type[2], method[2];
 	unsigned int apdu_prefix_len = 1 /* 0xD8 */ + 2 /* port */ + 1 /* 0x6F */ + 4 /* NS */ + 2 /* type */ + 2 /* method */ + 2 /* service length */;
 	unsigned int apdu_data_len;
-	unsigned char *apdu_data_ptr;
+	u8 *apdu_data_ptr;
 	sc_apdu_t *apdu;
 	int cla;
 
@@ -560,8 +560,8 @@ static sc_apdu_t *dotnet_op_to_apdu(struct sc_card *card, const dotnet_op_t *op)
 
 static int idprimenet_op_call(
 		struct sc_card *card,
-		unsigned char port_msb,
-		unsigned char port_lsb,
+		u8 port_msb,
+		u8 port_lsb,
 		char *namespace,
 		char *type,
 		char *method,
@@ -571,7 +571,7 @@ static int idprimenet_op_call(
 	int res;
 	dotnet_op_t op;
 	sc_apdu_t *apdu;
-	unsigned char *resp = NULL;
+	u8 *resp = NULL;
 	size_t resplen = 255; //FIXME: Be more flexible
 	unsigned int resp_header_size = 6; // 4 bytes of namespace hivecode + 2 bytes of type hivecode
 	const idprimenet_type_hivecode_t *r_type;
@@ -650,7 +650,7 @@ error:
 static int idprimenet_op_mscm_getchallenge(
 		struct sc_card *card,
 		const idprimenet_type_hivecode_t **exception,
-		unsigned char *challenge,
+		u8 *challenge,
 		size_t *challenge_len) {
 	dotnet_op_response_t *response;
 	int res;
@@ -725,7 +725,7 @@ static int idprimenet_op_contentmanager_getserialnumber(struct sc_card *card) {
 static int idprimenet_op_mscm_getserialnumber(
 		struct sc_card *card,
 		const idprimenet_type_hivecode_t **exception,
-		unsigned char *serialnumber,
+		u8 *serialnumber,
 		size_t *serialnumber_len) {
 	dotnet_op_response_t *response;
 	int res;
@@ -980,7 +980,7 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
-		unsigned char serialnumber[255];
+		u8 serialnumber[255];
 		size_t serialnumber_len = 255;
 		if (idprimenet_op_mscm_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
 			printf("Failure retrieving serial number\n");
@@ -1014,7 +1014,7 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
-		unsigned char challenge[255];
+		u8 challenge[255];
 		size_t challenge_len = 255;
 		if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
 			printf("Failure retrieving challenge\n");
