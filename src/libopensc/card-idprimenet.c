@@ -440,7 +440,7 @@ static int idprimenet_apdu_to_u1array(
 		return -1;
 	}
 	if ((data_len - 4) > *dest_len) {
-		printf("Buffer too small\n");
+		printf("Buffer too small for %ld bytes\n", data_len);
 		return -1;
 	}
 
@@ -464,8 +464,8 @@ static int idprimenet_apdu_to_s4array(
 		printf("Malformed data - too small for a s4array\n");
 		return -1;
 	}
-	if ((data_len - 4) > *dest_len) {
-		printf("Buffer too small\n");
+	if ((data_len - 4) / 4 > *dest_len) {
+		printf("Buffer of %ld ints too small for %ld bytes\n", *dest_len, data_len);
 		return -1;
 	}
 	if (data_len % 4) {
@@ -602,53 +602,88 @@ static int idprimenet_op_call(
 		LOG_TEST_RET(card->ctx, res, "APDU transmit failed"); // TODO: See if this does what we actually want */
 	}
 
-	if (apdu->resplen < resp_header_size) {
-		if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID) {
-			// No data expected in the response
-			response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
-			response->data_len = 0;
-		} else {
-			printf("Response too short?!\n");
-		}
+	if (!strcmp("MSCM", service)) {
+		if (apdu->resplen < resp_header_size) {
+			if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID) {
+				// No data expected in the response
+				response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
+				response->data_len = 0;
+			} else {
+				printf("Response too short?!\n");
+			}
 
-		free(apdu);
-		return 1;
+			free(apdu);
+			return 1;
+		}
 	}
 
-	response->namespace = hivecode_to_namespace(resp);
+	if (!strcmp("MSCM", service)) {
+		response->namespace = hivecode_to_namespace(resp);
+		r_type = hivecode_to_exception_type(resp + 4);
+		if (r_type) {
+			response->exception = r_type;
+			if (apdu->resplen > resp_header_size) {
+				// There's a message to go with this exception
+				response->exception_msg = malloc(apdu->resplen - (resp_header_size - 1));
+				if (!response->exception_msg) goto error;
+				memcpy(response->exception_msg, apdu->resp + resp_header_size, apdu->resplen - resp_header_size);
+				response->exception_msg[apdu->resplen - resp_header_size] = '\0';
+			}
+		} else {
+			r_type = hivecode_to_type(resp + 4); // TODO: Check for failed lookup
+			response->data_type = r_type->type;
+			if (apdu->resplen > resp_header_size) {
+				response->data = malloc(apdu->resplen - resp_header_size);
+				if (!response->data) goto error;
+				response->data_len = apdu->resplen - resp_header_size;
+				memcpy(response->data, apdu->resp + resp_header_size, response->data_len);
+				if (response->namespace->namespace_id != expected_response_ns) {
+					printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+					goto error;
+				}
 
-	r_type = hivecode_to_exception_type(resp + 4);
-	if (r_type) {
-		response->exception = r_type;
-		if (apdu->resplen > resp_header_size) {
-			// There's a message to go with this exception
-			response->exception_msg = malloc(apdu->resplen - (resp_header_size - 1));
-			if (!response->exception_msg) goto error;
-			memcpy(response->exception_msg, apdu->resp + resp_header_size, apdu->resplen - resp_header_size);
-			response->exception_msg[apdu->resplen - resp_header_size] = '\0';
+				if (response->data_type != expected_response_type) {
+					printf("Response had unexpected type: %s\n", r_type->type_str);
+					goto error;
+				}
+
+				if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID && response->data) {
+					printf("Got some data in the response, but expected a void result\n");
+					goto error;
+				}
+			}
 		}
 	} else {
-		r_type = hivecode_to_type(resp + 4); // TODO: Check for failed lookup
-		response->data_type = r_type->type;
-		if (apdu->resplen > resp_header_size) {
-			response->data = malloc(apdu->resplen - resp_header_size);
-			if (!response->data) goto error;
-			response->data_len = apdu->resplen - resp_header_size;
-			memcpy(response->data, apdu->resp + resp_header_size, response->data_len);
-			if (response->namespace->namespace_id != expected_response_ns) {
-				printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+		if (!apdu->resplen) {
+			printf("Empty response\n");
+			goto error;
+		}
+		switch (*resp) {
+			case 1:
+				//TODO Data is [return value][output params] - handle output params
+				response->data = malloc(apdu->resplen - 1);
+				if (!response->data) goto error;
+				response->data_len = apdu->resplen - 1;
+				memcpy(response->data, apdu->resp + 1, response->data_len);
+				break;
+			case 0xff:
+				// TODO: Move this into a shared function
+				response->namespace = hivecode_to_namespace(resp);
+				r_type = hivecode_to_exception_type(resp + 4);
+				if (r_type) {
+					response->exception = r_type;
+					if (apdu->resplen > resp_header_size) {
+						// There's a message to go with this exception
+						response->exception_msg = malloc(apdu->resplen - (resp_header_size - 1));
+						if (!response->exception_msg) goto error;
+						memcpy(response->exception_msg, apdu->resp + resp_header_size, apdu->resplen - resp_header_size);
+						response->exception_msg[apdu->resplen - resp_header_size] = '\0';
+					}
+				}
+				break;
+			default:
+				printf("Invalid first byte of non-MSCM response %02x\n", *resp);
 				goto error;
-			}
-
-			if (response->data_type != expected_response_type) {
-				printf("Response had unexpected type: %s\n", r_type->type_str);
-				goto error;
-			}
-
-			if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID && response->data) {
-				printf("Got some data in the response, but expected a void result\n");
-				goto error;
-			}
 		}
 	}
 
@@ -710,22 +745,56 @@ error:
 	return -1;
 }
 
-/*
-static int idprimenet_op_contentmanager_getserialnumber(struct sc_card *card) {
-	dotnet_op_response_t *response = dotnet_op_response_new();
+static int idprimenet_op_contentmanager_getserialnumber(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		u8 *serialnumber,
+		size_t *serialnumber_len) {
+	dotnet_op_response_t *response;
+	int res;
 
-	return idprimenet_op_call(
+	if (!card            ) return -1;
+	if (!serialnumber    ) return -1;
+	if (!serialnumber_len) return -1;
+
+	response = dotnet_op_response_new();
+
+	res = idprimenet_op_call(
 		card,
 		0, 0x01,
 		"SmartCard",
 		"SmartCard.ContentManager",
 		"System.Byte[] get_SerialNumber()",
 		"ContentManager",
-		response
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY
 	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+
+		if (idprimenet_apdu_to_u1array(response->data, response->data_len, serialnumber, serialnumber_len)) {
+			printf("Failed to process response\n");
+			goto error;
+		}
+	}
+
 	dotnet_op_response_destroy(response);
+	return 0;
+
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
 }
-*/
 
 static int idprimenet_op_mscm_getserialnumber(
 		struct sc_card *card,
@@ -910,7 +979,62 @@ static int idprimenet_op_mscm_queryfreespace(
 		// So what does the above mean? 1 key container available? 15 max key containers
 		// and 0xb468 (46208) bytes free?
 	}
-	
+
+	dotnet_op_response_destroy(response);
+	return 0;
+
+error:
+	dotnet_op_response_destroy(response);
+	return 1;
+}
+
+typedef struct {
+	int minimumBitLen;
+	int defaultBitLen;
+	int maximumBitLen;
+	int incrementalBitLen;
+} idprimenet_key_sizes_t;
+
+static int idprimenet_op_mscm_querykeysizes(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		idprimenet_key_sizes_t *key_sizes) {
+	dotnet_op_response_t *response = dotnet_op_response_new();
+	int res;
+
+	res = idprimenet_op_call(
+		card,
+		0, 0x05,
+		"CardModuleService",
+		"CardModuleService",
+		"System.Int32[] QueryKeySizes()",
+		"MSCM",
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_INT32_ARRAY
+	);
+	if (!res) goto error;
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		size_t key_sizes_data_len = 4;
+		int key_sizes_data[key_sizes_data_len];
+		*exception = &idprimenet_type_none;
+
+		idprimenet_apdu_to_s4array(response->data, response->data_len, key_sizes_data, &key_sizes_data_len);
+
+		if (key_sizes_data_len != 4) {
+			printf("Unexpected respones to QueryKeySizes(). Only %ld bytes\n", key_sizes_data_len);
+			goto error;
+		}
+		key_sizes->incrementalBitLen = key_sizes_data[0];
+		key_sizes->maximumBitLen     = key_sizes_data[1];
+		key_sizes->defaultBitLen     = key_sizes_data[2];
+		key_sizes->minimumBitLen     = key_sizes_data[3];
+	}
+
 	dotnet_op_response_destroy(response);
 	return 0;
 
@@ -976,6 +1100,24 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
+		idprimenet_key_sizes_t keysizes = {0, 0, 0, 0};
+		if (idprimenet_op_mscm_querykeysizes(card, &exception, &keysizes)) {
+			printf("Failure retrieving keysizes\n");
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s retrieving keysizes\n", exception->type_str);
+			return 0;
+		} else {
+			printf("Key sizes: min: %d, default: %d, max: %d, incremental: %d\n",
+				keysizes.minimumBitLen,
+				keysizes.defaultBitLen,
+				keysizes.maximumBitLen,
+				keysizes.incrementalBitLen
+			);
+		}
+	}
+	{
 		u8 challenge[255];
 		size_t challenge_len = 255;
 		if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
@@ -1004,7 +1146,23 @@ static int idprimenet_match_card(struct sc_card *card)
 			printf("GC forced\n");
 		}
 	}
-	//idprimenet_op_contentmanager_getserialnumber(card);
+	{
+		u8 serialnumber[255];
+		size_t serialnumber_len = 255;
+		if (idprimenet_op__getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
+			printf("Failure retrieving serial number\n");
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s retrieving serial number\n", exception->type_str);
+			return 0;
+		} else {
+			printf("Serial number: 0x");
+			for (unsigned int i = 0; i < serialnumber_len; i++)
+				printf("%02x", serialnumber[i]);
+			printf("\n");
+		}
+	}
 
 	return 1;
 }
