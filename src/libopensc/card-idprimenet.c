@@ -414,17 +414,14 @@ static int method_to_hivecode(const char *method, u8 hivecode[2]) {
 	return 0;
 }
 
-static size_t idprimenet_apdu_strlen(const u8 *data) {
-	return (data[0] << 8) | data[1];
-}
-
 static int idprimenet_apdu_to_string(const u8 *data, size_t data_len, char *dest, size_t *dest_len) {
 	/* dest needs to be at least data_len+1 in size */
-	if (data_len >= *dest_len) {
+	unsigned int strlen = (data[0] << 8) | data[1];
+	if (*dest_len < strlen + 1) {
 		printf("Buffer isn't big enough for string");
 		return 0;
 	}
-	memcpy(dest, data + 2, data_len);
+	memcpy(dest, data + 2, data_len - 2);
 	dest[data_len] = '\0';
 	*dest_len = data_len;
 
@@ -566,7 +563,9 @@ static int idprimenet_op_call(
 		char *type,
 		char *method,
 		char *service,
-		dotnet_op_response_t *response
+		dotnet_op_response_t *response,
+		idprimenet_namespace_t expected_response_ns,
+		idprimenet_type_t expected_response_type
 	) {
 	int res;
 	dotnet_op_t op;
@@ -604,8 +603,7 @@ static int idprimenet_op_call(
 	}
 
 	if (apdu->resplen < resp_header_size) {
-		// XXX: Bit of a hack...
-		if (!strncmp(method, "System.Void ", strlen("System.Void "))) {
+		if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID) {
 			// No data expected in the response
 			response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
 			response->data_len = 0;
@@ -637,6 +635,20 @@ static int idprimenet_op_call(
 			if (!response->data) goto error;
 			response->data_len = apdu->resplen - resp_header_size;
 			memcpy(response->data, apdu->resp + resp_header_size, response->data_len);
+			if (response->namespace->namespace_id != expected_response_ns) {
+				printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+				goto error;
+			}
+
+			if (response->data_type != expected_response_type) {
+				printf("Response had unexpected type: %s\n", r_type->type_str);
+				goto error;
+			}
+
+			if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID && response->data) {
+				printf("Got some data in the response, but expected a void result\n");
+				goto error;
+			}
 		}
 	}
 
@@ -668,7 +680,9 @@ static int idprimenet_op_mscm_getchallenge(
 		"CardModuleService",
 		"System.Byte[] GetChallenge()",
 		"MSCM",
-		response
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY
 	);
 
 	if (!res) {
@@ -681,15 +695,6 @@ static int idprimenet_op_mscm_getchallenge(
 		// TODO: Return the response->exception_msg somehow
 	} else {
 		*exception = &idprimenet_type_none;
-		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-			goto error;
-		}
-
-		if (response->data_type != IDPRIME_TYPE_SYSTEM_BYTE_ARRAY) {
-			printf("Response had unexpected type\n");
-			goto error;
-		}
 
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, challenge, challenge_len)) {
 			printf("Failed to process response\n");
@@ -738,12 +743,14 @@ static int idprimenet_op_mscm_getserialnumber(
 
 	res = idprimenet_op_call(
 		card,
-		0, 0x05, /* port */
+		0, 0x05,
 		"CardModuleService",
 		"CardModuleService",
-		"System.Byte[] get_SerialNumber()", /* method */
-		"MSCM", /* service name */
-		response
+		"System.Byte[] get_SerialNumber()",
+		"MSCM",
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY
 	);
 
 	if (!res) {
@@ -756,15 +763,6 @@ static int idprimenet_op_mscm_getserialnumber(
 		// TODO: Return the response->exception_msg somehow
 	} else {
 		*exception = &idprimenet_type_none;
-		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-			goto error;
-		}
-
-		if (response->data_type != IDPRIME_TYPE_SYSTEM_BYTE_ARRAY) {
-			printf("Response had unexpected type\n");
-			goto error;
-		}
 
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, serialnumber, serialnumber_len)) {
 			printf("Failed to process response\n");
@@ -796,7 +794,9 @@ static int idprimenet_op_mscm_forcegarbagecollector(
 		"CardModuleService",
 		"System.Void ForceGarbageCollector()",
 		"MSCM",
-		response
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_VOID
 	);
 
 	if (!res) {
@@ -809,20 +809,6 @@ static int idprimenet_op_mscm_forcegarbagecollector(
 		// TODO: Return the response->exception_msg somehow
 	} else {
 		*exception = &idprimenet_type_none;
-		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-			goto error;
-		}
-
-		if (response->data_type != IDPRIME_TYPE_SYSTEM_VOID) {
-			printf("Response had unexpected type %d\n", response->data_type);
-			goto error;
-		}
-
-		if (response->data) {
-			printf("Got some data in the response, which was unexpected\n");
-			goto error;
-		}
 	}
 
 	dotnet_op_response_destroy(response);
@@ -839,7 +825,6 @@ static int idprimenet_op_mscm_getversion(
 		size_t *version_str_len) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
-	size_t resp_len;
 
 	if (!card           ) return -1;
 	if (!version_str    ) return -1;
@@ -852,7 +837,9 @@ static int idprimenet_op_mscm_getversion(
 		"CardModuleService",
 		"System.String get_Version()", /* method */
 		"MSCM", /* service name */
-		response
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_STRING
 	);
 
 	if (!res) {
@@ -865,24 +852,8 @@ static int idprimenet_op_mscm_getversion(
 		// TODO: Return the response->exception_msg somehow
 	} else {
 		*exception = &idprimenet_type_none;
-		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-			goto error;
-		}
 
-		if (response->data_type != IDPRIME_TYPE_SYSTEM_STRING) {
-			printf("Response had unexpected type\n");
-			goto error;
-		}
-
-		resp_len = idprimenet_apdu_strlen(response->data);
-
-		if (resp_len > *version_str_len - 1 /* Need space for a null terminator */) {
-			printf("Version string returned by card is too long for buffer\n");
-			goto error;
-		}
-
-		idprimenet_apdu_to_string(response->data, resp_len, version_str, version_str_len);
+		idprimenet_apdu_to_string(response->data, response->data_len, version_str, version_str_len);
 	}
 
 	dotnet_op_response_destroy(response);
@@ -902,31 +873,22 @@ static int idprimenet_op_mscm_queryfreespace(
 
 	res = idprimenet_op_call(
 		card,
-		0, 0x05, /* port */
+		0, 0x05,
 		"CardModuleService",
 		"CardModuleService",
-		"System.Int32[] QueryFreeSpace()", /* method */
-		"MSCM", /* service name */
-		response
+		"System.Int32[] QueryFreeSpace()",
+		"MSCM",
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_INT32_ARRAY
 	);
 	if (!res) goto error;
-
 
 	if (response->exception->type != IDPRIME_TYPE_NONE) {
 		*exception = response->exception;
 		// TODO: Return the response->exception_msg somehow
 	} else {
 		*exception = &idprimenet_type_none;
-
-		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-			goto error;
-		}
-
-		if (response->data_type != IDPRIME_TYPE_SYSTEM_INT32_ARRAY) {
-			printf("Response had unexpected type\n");
-			goto error;
-		}
 
 		idprimenet_apdu_to_s4array(response->data, response->data_len, freespace, freespace_len);
 		// Response seen to be 3 ints: 0x0001, 0x000f, 0xb468
