@@ -216,7 +216,11 @@ static const idprimenet_type_hivecode_t idprimenet_type_hivecodes[] = {
 	{IDPRIME_TYPE_SYSTEM_UINT64_ARRAY,      "System.UInt64[]",          {0x71, 0xB0}},
 	{IDPRIME_TYPE_SYSTEM_IO_MEMORYSTREAM,   "System.IO.MemoryStream",   {0xFE, 0xD7}},
 	{IDPRIME_TYPE_SMARTCARD_CONTENTMANAGER, "SmartCard.ContentManager", {0xB1, 0x8C}},
-	{IDPRIME_TYPE_NONE,                     NULL,                       {0,    0,  }}
+	{IDPRIME_TYPE_NONE,                     NULL,                       {0,    0   }}
+};
+
+static const idprimenet_type_hivecode_t idprimenet_type_none = {
+	IDPRIME_TYPE_NONE,                     NULL,                        {0,    0   }
 };
 
 static const idprimenet_type_hivecode_t idprimenet_exception_type_hivecodes[] = {
@@ -257,7 +261,7 @@ static const idprimenet_type_hivecode_t idprimenet_exception_type_hivecodes[] = 
 };
 
 typedef struct {
-	idprimenet_type_t exception; /* IDPRIME_TYPE_NONE if no exception */
+	const idprimenet_type_hivecode_t *exception;
 	char *exception_msg;
 	const idprimenet_namespace_hivecode_t *namespace;
 	idprimenet_type_t data_type;
@@ -268,7 +272,7 @@ typedef struct {
 static dotnet_op_response_t *dotnet_op_response_new() {
 	dotnet_op_response_t *res = malloc(sizeof(dotnet_op_response_t));
 
-	res->exception = IDPRIME_TYPE_NONE;
+	res->exception = &idprimenet_type_none;
 	res->exception_msg = NULL,
 	res->data_type = IDPRIME_TYPE_NONE;
 	res->data = NULL;
@@ -414,8 +418,71 @@ static size_t idprimenet_apdu_strlen(const unsigned char *data) {
 	return (data[0] << 8) | data[1];
 }
 
-static int idprimenet_apdu_to_string(const unsigned char *data, char *dest, size_t n) {
-	memcpy(dest, data + 2, n);
+static int idprimenet_apdu_to_string(const unsigned char *data, size_t data_len, char *dest, size_t *dest_len) {
+	/* dest needs to be at least data_len+1 in size */
+	if (data_len >= *dest_len) {
+		printf("Buffer isn't big enough for string");
+		return 0;
+	}
+	memcpy(dest, data + 2, data_len);
+	dest[data_len] = '\0';
+	*dest_len = data_len;
+
+	return 0;
+}
+
+static int idprimenet_apdu_to_u1array(
+		const unsigned char *data,
+		size_t data_len,
+		unsigned char *dest,
+		size_t *dest_len) {
+	size_t array_len;
+
+	if (data_len < 4) {
+		printf("Malformed data - too small for a u1array\n");
+		return -1;
+	}
+	if ((data_len - 4) > *dest_len) {
+		printf("Buffer too small\n");
+		return -1;
+	}
+
+	array_len = (data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+
+	memcpy(dest, data + 4, array_len);
+
+	*dest_len = array_len;
+
+	return 0;
+}
+
+static int idprimenet_apdu_to_s4array(
+		const unsigned char *data,
+		size_t data_len,
+		int *dest,
+		size_t *dest_len) {
+	size_t array_len;
+
+	if (data_len < 4) {
+		printf("Malformed data - too small for a s4array\n");
+		return -1;
+	}
+	if ((data_len - 4) > *dest_len) {
+		printf("Buffer too small\n");
+		return -1;
+	}
+	if (data_len % 4) {
+		printf("Buffer not a multiple of 4 bytes\n");
+		return -1;
+	}
+
+	array_len = (data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+
+	for (size_t i = 0; i < data_len / 4; i++)
+		dest[i] = (data[4 + (i * 4)] << 24 | data[5 + (i * 4)] << 16 | data[6 + (i * 4)] << 8 | data[7 + (i * 4)]);
+
+	*dest_len = array_len;
+
 	return 0;
 }
 
@@ -486,7 +553,7 @@ static sc_apdu_t *dotnet_op_to_apdu(struct sc_card *card, const dotnet_op_t *op)
 	*(apdu_data_ptr++) = service_len & 0x00ff;
 	memcpy(apdu_data_ptr, op->service, service_len);
 
-	printf("APDU generated for: %s:0x%02x%02x [%s] (%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
+	//printf("APDU generated for: %s:0x%02x%02x [%s] (%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
 
 	return apdu;
 }
@@ -504,7 +571,7 @@ static int idprimenet_op_call(
 	int res;
 	dotnet_op_t op;
 	sc_apdu_t *apdu;
-	unsigned char *resp;
+	unsigned char *resp = NULL;
 	size_t resplen = 255; //FIXME: Be more flexible
 	unsigned int resp_header_size = 6; // 4 bytes of namespace hivecode + 2 bytes of type hivecode
 	const idprimenet_type_hivecode_t *r_type;
@@ -525,11 +592,9 @@ static int idprimenet_op_call(
 	apdu = dotnet_op_to_apdu(card, &op);
 	if (!apdu) return 0;
 
-	if (resp) {
-		apdu->resp = resp;
-		apdu->resplen = resplen;
-		apdu->le = resplen;
-	}
+	apdu->resp = resp;
+	apdu->resplen = resplen;
+	apdu->le = resplen;
 
 	res = sc_transmit_apdu(card, apdu);
 
@@ -539,15 +604,24 @@ static int idprimenet_op_call(
 	}
 
 	if (apdu->resplen < resp_header_size) {
-		printf("Response too short?!");
-		goto error;
+		// XXX: Bit of a hack...
+		if (!strncmp(method, "System.Void ", strlen("System.Void "))) {
+			// No data expected in the response
+			response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
+			response->data_len = 0;
+		} else {
+			printf("Response too short?!\n");
+		}
+
+		free(apdu);
+		return 1;
 	}
 
 	response->namespace = hivecode_to_namespace(resp);
 
 	r_type = hivecode_to_exception_type(resp + 4);
 	if (r_type) {
-		response->exception = r_type->type;
+		response->exception = r_type;
 		if (apdu->resplen > resp_header_size) {
 			// There's a message to go with this exception
 			response->exception_msg = malloc(apdu->resplen - (resp_header_size - 1));
@@ -573,10 +647,21 @@ error:
 	return 0;
 }
 
-static int idprimenet_op_mscm_getchallenge(struct sc_card *card) {
-	dotnet_op_response_t *response = dotnet_op_response_new();
+static int idprimenet_op_mscm_getchallenge(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		unsigned char *challenge,
+		size_t *challenge_len) {
+	dotnet_op_response_t *response;
+	int res;
 
-	return idprimenet_op_call(
+	if (!card         ) return -1;
+	if (!challenge    ) return -1;
+	if (!challenge_len) return -1;
+
+	response = dotnet_op_response_new();
+
+	res = idprimenet_op_call(
 		card,
 		0, 0x05,
 		"CardModuleService",
@@ -585,27 +670,71 @@ static int idprimenet_op_mscm_getchallenge(struct sc_card *card) {
 		"MSCM",
 		response
 	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
+			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+			goto error;
+		}
+
+		if (response->data_type != IDPRIME_TYPE_SYSTEM_BYTE_ARRAY) {
+			printf("Response had unexpected type\n");
+			goto error;
+		}
+
+		if (idprimenet_apdu_to_u1array(response->data, response->data_len, challenge, challenge_len)) {
+			printf("Failed to process response\n");
+			goto error;
+		}
+	}
+
 	dotnet_op_response_destroy(response);
+	return 0;
+
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
 }
 
+/*
 static int idprimenet_op_contentmanager_getserialnumber(struct sc_card *card) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 
 	return idprimenet_op_call(
 		card,
-		0, 0x01, /* port */
-		"SmartCard", /* namespace */
-		"SmartCard.ContentManager", /* type */
-		"System.Byte[] get_SerialNumber()", /* method */
-		"ContentManager", /* service name */
+		0, 0x01,
+		"SmartCard",
+		"SmartCard.ContentManager",
+		"System.Byte[] get_SerialNumber()",
+		"ContentManager",
 		response
 	);
 	dotnet_op_response_destroy(response);
 }
+*/
 
-static int idprimenet_op_mscm_getserialnumber(struct sc_card *card) {
-	dotnet_op_response_t *response = dotnet_op_response_new();
+static int idprimenet_op_mscm_getserialnumber(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		unsigned char *serialnumber,
+		size_t *serialnumber_len) {
+	dotnet_op_response_t *response;
 	int res;
+
+	if (!card            ) return -1;
+	if (!serialnumber    ) return -1;
+	if (!serialnumber_len) return -1;
+
+	response = dotnet_op_response_new();
 
 	res = idprimenet_op_call(
 		card,
@@ -617,34 +746,104 @@ static int idprimenet_op_mscm_getserialnumber(struct sc_card *card) {
 		response
 	);
 
-	if (!res) return 0;
-
-	if (response->exception != IDPRIME_TYPE_NONE) {
-		printf("Response raised an exception: %d: %s\n", response->exception, response->exception_msg ? response->exception_msg : "(no message)");
-		return 0;
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
 	}
 
-	if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-		printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-		return 0;
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
+			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+			goto error;
+		}
+
+		if (response->data_type != IDPRIME_TYPE_SYSTEM_BYTE_ARRAY) {
+			printf("Response had unexpected type\n");
+			goto error;
+		}
+
+		if (idprimenet_apdu_to_u1array(response->data, response->data_len, serialnumber, serialnumber_len)) {
+			printf("Failed to process response\n");
+			goto error;
+		}
 	}
 
-	if (response->data_type != IDPRIME_TYPE_SYSTEM_BYTE_ARRAY) {
-		printf("Response had unexpected type\n");
-		return 0;
-	}
-
-	printf("Was a byte array\n");
-	// Looks like data is len1, len2, len3, len4, [bytes]
 	dotnet_op_response_destroy(response);
-	return 1;
+	return 0;
+
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
 }
 
-static char* idprimenet_op_mscm_getversion(struct sc_card *card) {
+// TODO: Support commands with no response
+static int idprimenet_op_mscm_forcegarbagecollector(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
-	char *version_str = NULL;
-	size_t version_str_len;
+
+	if (!card           ) return -1;
+
+	res = idprimenet_op_call(
+		card,
+		0, 0x05,
+		"CardModuleService",
+		"CardModuleService",
+		"System.Void ForceGarbageCollector()",
+		"MSCM",
+		response
+	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
+			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+			goto error;
+		}
+
+		if (response->data_type != IDPRIME_TYPE_SYSTEM_VOID) {
+			printf("Response had unexpected type %d\n", response->data_type);
+			goto error;
+		}
+
+		if (response->data) {
+			printf("Got some data in the response, which was unexpected\n");
+			goto error;
+		}
+	}
+
+	dotnet_op_response_destroy(response);
+	return 0;
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
+}
+
+static int idprimenet_op_mscm_getversion(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		char *version_str,
+		size_t *version_str_len) {
+	dotnet_op_response_t *response = dotnet_op_response_new();
+	int res;
+	size_t resp_len;
+
+	if (!card           ) return -1;
+	if (!version_str    ) return -1;
+	if (!version_str_len) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -655,35 +854,49 @@ static char* idprimenet_op_mscm_getversion(struct sc_card *card) {
 		"MSCM", /* service name */
 		response
 	);
-	if (!res) return NULL;
 
-	if (response->exception != IDPRIME_TYPE_NONE) {
-		printf("Response raised an exception: %d: %s\n", response->exception, response->exception_msg ? response->exception_msg : "(no message)");
-		return NULL;
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
 	}
 
-	if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-		printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-		return NULL;
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
+			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+			goto error;
+		}
+
+		if (response->data_type != IDPRIME_TYPE_SYSTEM_STRING) {
+			printf("Response had unexpected type\n");
+			goto error;
+		}
+
+		resp_len = idprimenet_apdu_strlen(response->data);
+
+		if (resp_len > *version_str_len - 1 /* Need space for a null terminator */) {
+			printf("Version string returned by card is too long for buffer\n");
+			goto error;
+		}
+
+		idprimenet_apdu_to_string(response->data, resp_len, version_str, version_str_len);
 	}
-
-	if (response->data_type != IDPRIME_TYPE_SYSTEM_STRING) {
-		printf("Response had unexpected type");
-		return NULL;
-	}
-
-	version_str_len = idprimenet_apdu_strlen(response->data);
-	/* TODO: check for errors */
-	version_str = malloc(version_str_len);
-	if (!version_str) return NULL;
-
-	idprimenet_apdu_to_string(response->data, version_str, version_str_len);
 
 	dotnet_op_response_destroy(response);
-	return version_str;
+	return 0;
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
 }
 
-static int idprimenet_op_mscm_queryfreespace(struct sc_card *card) {
+static int idprimenet_op_mscm_queryfreespace(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		int *freespace,
+		size_t *freespace_len) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
@@ -692,33 +905,51 @@ static int idprimenet_op_mscm_queryfreespace(struct sc_card *card) {
 		0, 0x05, /* port */
 		"CardModuleService",
 		"CardModuleService",
-		"System.Int[] QueryFreeSpace()", /* method */
+		"System.Int32[] QueryFreeSpace()", /* method */
 		"MSCM", /* service name */
 		response
 	);
 	if (!res) goto error;
 
-	printf("Got response\n");
-	if (response->exception != IDPRIME_TYPE_NONE) {
-	printf("Got exception\n");
-		printf("Response raised an exception: %d: %s\n", response->exception, response->exception_msg ? response->exception_msg : "(no message)");
-		goto error;
-	}
 
-	printf("Checking namespace\n");
-	if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
-		printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
-		goto error;
-	}
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
 
-	printf("Checking data type\n");
-	if (response->data_type != IDPRIME_TYPE_SYSTEM_INT16_ARRAY) {
-		printf("Response had unexpected type");
-		goto error;
-	}
+		if (response->namespace->namespace_id != IDPRIME_NS_SYSTEM) {
+			printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+			goto error;
+		}
 
-	printf("Was an int16 array\n");
+		if (response->data_type != IDPRIME_TYPE_SYSTEM_INT32_ARRAY) {
+			printf("Response had unexpected type\n");
+			goto error;
+		}
+
+		idprimenet_apdu_to_s4array(response->data, response->data_len, freespace, freespace_len);
+		// Response seen to be 3 ints: 0x0001, 0x000f, 0xb468
+
+		/* From libgtop11dotnet cardmod.h:
+		 * //
+		 * // Function: CardQueryFreeSpace
+		 * //
+		 * #define CARD_FREE_SPACE_INFO_CURRENT_VERSION 1
+		 * typedef struct _CARD_FREE_SPACE_INFO
+		 * {
+		 *  DWORD dwVersion;
+		 *  DWORD dwBytesAvailable;
+		 *  DWORD dwKeyContainersAvailable;
+		 *  DWORD dwMaxKeyContainers;
+		 * } CARD_FREE_SPACE_INFO, *PCARD_FREE_SPACE_INFO;
+		 */
+
+		// So what does the above mean? 1 key container available? 15 max key containers
+		// and 0xb468 (46208) bytes free?
+	}
 	
+	dotnet_op_response_destroy(response);
 	return 0;
 
 error:
@@ -729,17 +960,88 @@ error:
 static int idprimenet_match_card(struct sc_card *card)
 {
 	int i;
-	char *version;
+	const idprimenet_type_hivecode_t *exception;
 
 	i = _sc_match_atr(card, idprimenet_atrs, &card->type);
 	if (i < 0) return 0;
 
-	version = idprimenet_op_mscm_getversion(card);
-	if (!version) return 0;
-	printf("Card version %s\n", version);
-	idprimenet_op_mscm_getserialnumber(card);
-	idprimenet_op_mscm_queryfreespace(card);
-	idprimenet_op_mscm_getchallenge(card);
+	{
+		char version[255];
+		size_t version_len = 255;
+		if (idprimenet_op_mscm_getversion(card, &exception, version, &version_len)) {
+			printf("Failure retrieving version\n");
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s retrieving version\n", exception->type_str);
+			return 0;
+		} else {
+			printf("Card version (%ld chars) %s\n", version_len, version);
+		}
+	}
+	{
+		unsigned char serialnumber[255];
+		size_t serialnumber_len = 255;
+		if (idprimenet_op_mscm_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
+			printf("Failure retrieving serial number\n");
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s retrieving serial number\n", exception->type_str);
+			return 0;
+		} else {
+			printf("Serial number: 0x");
+			for (unsigned int i = 0; i < serialnumber_len; i++)
+				printf("%02x", serialnumber[i]);
+			printf("\n");
+		}
+	}
+	{
+		int freespace[255];
+		size_t freespace_len = 255;
+		if (idprimenet_op_mscm_queryfreespace(card, &exception, freespace, &freespace_len)) {
+			printf("Failure retrieving freespace\n");
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s retrieving freespace\n", exception->type_str);
+			return 0;
+		} else {
+			printf("Freespace: 0x");
+			for (unsigned int i = 0; i < freespace_len; i++)
+				printf("%04x", freespace[i]);
+			printf("\n");
+		}
+	}
+	{
+		unsigned char challenge[255];
+		size_t challenge_len = 255;
+		if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
+			printf("Failure retrieving challenge\n");
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s retrieving challenge\n", exception->type_str);
+			return 0;
+		} else {
+			printf("Challenge: 0x");
+			for (unsigned int i = 0; i < challenge_len; i++)
+				printf("%02x", challenge[i]);
+			printf("\n");
+		}
+	}
+	{
+		if (idprimenet_op_mscm_forcegarbagecollector(card, &exception)) {
+			printf("Failure forcing GC\n");
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s forcing GC\n", exception->type_str);
+			return 0;
+		} else {
+			printf("GC forced\n");
+		}
+	}
 	//idprimenet_op_contentmanager_getserialnumber(card);
 
 	return 1;
