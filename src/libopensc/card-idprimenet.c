@@ -35,88 +35,6 @@
 
 #include "internal.h"
 
-typedef struct {
-	u8 port[2];
-	char *namespace;
-	char *type;
-	char *method;
-	char *service;
-} dotnet_op_t;
-
-typedef struct {
-	char *namespace;
-	char *type;
-	u8 *data;
-} dotnet_apdu_response_t;
-
-static struct sc_atr_table idprimenet_atrs[] = {
-	{"3b:16:96:41:73:74:72:69:64", NULL, NULL, SC_CARD_TYPE_IDPRIMENET_GENERIC, 0, NULL},
-	{NULL, NULL, NULL, 0, 0, NULL}
-};
-
-/* From http://support.gemalto.com/index.php?id=how_i_can_unblock_the_pin */
-/*
-static const u8 default_admin_key[] = {
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-};
-*/
-
-typedef enum {
-	IDPRIME_NS_NONE,
-	IDPRIME_NS_SYSTEM,
-	IDPRIME_NS_SYSTEM_IO,
-	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CHANNELS,
-	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING,
-	IDPRIME_NS_SYSTEM_SECURITY_CRYPTOGRAPHY,
-	IDPRIME_NS_SYSTEM_COLLECTIONS,
-	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CONTEXTS,
-	IDPRIME_NS_SYSTEM_SECURITY,
-	IDPRIME_NS_SYSTEM_REFLECTION,
-	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_MESSAGING,
-	IDPRIME_NS_SYSTEM_DIAGNOSTICS,
-	IDPRIME_NS_SYSTEM_RUNTIME_COMPILERSERVICES,
-	IDPRIME_NS_SYSTEM_RUNTIME_SERIALIZATION,
-	IDPRIME_NS_SYSTEM_TEXT,
-	IDPRIME_NS_SMARTCARD,
-	IDPRIME_NS_CARDMODULESERVICE,
-	IDPRIME_NS_NETCARDFILESYSTEM
-} idprimenet_namespace_t;
-
-typedef struct {
-	idprimenet_namespace_t namespace_id;
-	char *namespace;
-	u8 hivecode[4];
-} idprimenet_namespace_hivecode_t;
-
-/* From page 109 of the IDPrime.NET integration guide */
-/* These could be calculated if we knew what the public key token
- * of the relevant assemblies were
- */
-static const idprimenet_namespace_hivecode_t idprimenet_namespace_hivecodes[] = {
-	{IDPRIME_NS_SYSTEM,                            "System",                            {0x00, 0xD2, 0x5D, 0x1C}},
-	{IDPRIME_NS_SYSTEM_IO,                         "System.IO",                         {0x00, 0xD5, 0xE6, 0xDB}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CHANNELS,  "System.Runtime.Remoting.Channels",  {0x00, 0x00, 0x88, 0x6E}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING,           "System.Runtime.Remoting",           {0x00, 0xEB, 0x3D, 0xD9}},
-	{IDPRIME_NS_SYSTEM_SECURITY_CRYPTOGRAPHY,      "System.Security.Cryptography",      {0x00, 0xAC, 0xF5, 0x3B}},
-	{IDPRIME_NS_SYSTEM_COLLECTIONS,                "System.Collections",                {0x00, 0xC5, 0xA0, 0x10}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CONTEXTS,  "System.Runtime.Remoting.Contexts",  {0x00, 0x1F, 0x49, 0x94}},
-	{IDPRIME_NS_SYSTEM_SECURITY,                   "System.Security",                   {0x00, 0x96, 0x41, 0x45}},
-	{IDPRIME_NS_SYSTEM_REFLECTION,                 "System.Reflection",                 {0x00, 0x08, 0x75, 0x0F}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_MESSAGING, "System.Runtime.Remoting.Messaging", {0x00, 0xDE, 0xB9, 0x40}},
-	{IDPRIME_NS_SYSTEM_DIAGNOSTICS,                "System.Diagnostics",                {0x00, 0x97, 0x99, 0x5F}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_COMPILERSERVICES,   "System.Runtime.CompilerServices",   {0x00, 0xF6, 0x3E, 0x11}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_SERIALIZATION,      "System.Runtime.Serialization",      {0x00, 0x8D, 0x3B, 0x3D}}, /* From libgtop11dotnet MarshallerCfg.h */
-	{IDPRIME_NS_SYSTEM_TEXT,                       "System.Text",                       {0x00, 0x70, 0x27, 0x56}},
-	{IDPRIME_NS_SMARTCARD,                         "SmartCard",                         {0x00, 0xF5, 0xEF, 0xBF}},
-	/* Not really clear this is the real namespace name */
-	{IDPRIME_NS_CARDMODULESERVICE,                 "CardModuleService",                 {0x00, 0xC0, 0x4B, 0x4E}},
-	{IDPRIME_NS_NETCARDFILESYSTEM,                 "NetcardFilesystem",                 {0x00, 0xA1, 0xAC, 0x39}}, /* From libgtop11dotnet MarshallerCfg.h */
-	{IDPRIME_NS_NONE,                              NULL,                                {0,    0,    0,    0   }}
-};
-
 typedef enum {
 	IDPRIME_TYPE_NONE,
 	IDPRIME_TYPE_SYSTEM_VOID,
@@ -261,6 +179,94 @@ static const idprimenet_type_hivecode_t idprimenet_exception_type_hivecodes[] = 
 };
 
 typedef struct {
+	idprimenet_type_t type;
+	size_t value_len;
+	u8 *value;
+} idprimenet_arg_t;
+
+typedef struct {
+	u8 port[2];
+	char *namespace;
+	char *type;
+	char *method;
+	char *service;
+} dotnet_op_t;
+
+typedef struct {
+	char *namespace;
+	char *type;
+	u8 *data;
+} dotnet_apdu_response_t;
+
+static struct sc_atr_table idprimenet_atrs[] = {
+	{"3b:16:96:41:73:74:72:69:64", NULL, NULL, SC_CARD_TYPE_IDPRIMENET_GENERIC, 0, NULL},
+	{NULL, NULL, NULL, 0, 0, NULL}
+};
+
+/* From http://support.gemalto.com/index.php?id=how_i_can_unblock_the_pin */
+/*
+static const u8 default_admin_key[] = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+*/
+
+typedef enum {
+	IDPRIME_NS_NONE,
+	IDPRIME_NS_SYSTEM,
+	IDPRIME_NS_SYSTEM_IO,
+	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CHANNELS,
+	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING,
+	IDPRIME_NS_SYSTEM_SECURITY_CRYPTOGRAPHY,
+	IDPRIME_NS_SYSTEM_COLLECTIONS,
+	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CONTEXTS,
+	IDPRIME_NS_SYSTEM_SECURITY,
+	IDPRIME_NS_SYSTEM_REFLECTION,
+	IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_MESSAGING,
+	IDPRIME_NS_SYSTEM_DIAGNOSTICS,
+	IDPRIME_NS_SYSTEM_RUNTIME_COMPILERSERVICES,
+	IDPRIME_NS_SYSTEM_RUNTIME_SERIALIZATION,
+	IDPRIME_NS_SYSTEM_TEXT,
+	IDPRIME_NS_SMARTCARD,
+	IDPRIME_NS_CARDMODULESERVICE,
+	IDPRIME_NS_NETCARDFILESYSTEM
+} idprimenet_namespace_t;
+
+typedef struct {
+	idprimenet_namespace_t namespace_id;
+	char *namespace;
+	u8 hivecode[4];
+} idprimenet_namespace_hivecode_t;
+
+/* From page 109 of the IDPrime.NET integration guide */
+/* These could be calculated if we knew what the public key token
+ * of the relevant assemblies were
+ */
+static const idprimenet_namespace_hivecode_t idprimenet_namespace_hivecodes[] = {
+	{IDPRIME_NS_SYSTEM,                            "System",                            {0x00, 0xD2, 0x5D, 0x1C}},
+	{IDPRIME_NS_SYSTEM_IO,                         "System.IO",                         {0x00, 0xD5, 0xE6, 0xDB}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CHANNELS,  "System.Runtime.Remoting.Channels",  {0x00, 0x00, 0x88, 0x6E}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING,           "System.Runtime.Remoting",           {0x00, 0xEB, 0x3D, 0xD9}},
+	{IDPRIME_NS_SYSTEM_SECURITY_CRYPTOGRAPHY,      "System.Security.Cryptography",      {0x00, 0xAC, 0xF5, 0x3B}},
+	{IDPRIME_NS_SYSTEM_COLLECTIONS,                "System.Collections",                {0x00, 0xC5, 0xA0, 0x10}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CONTEXTS,  "System.Runtime.Remoting.Contexts",  {0x00, 0x1F, 0x49, 0x94}},
+	{IDPRIME_NS_SYSTEM_SECURITY,                   "System.Security",                   {0x00, 0x96, 0x41, 0x45}},
+	{IDPRIME_NS_SYSTEM_REFLECTION,                 "System.Reflection",                 {0x00, 0x08, 0x75, 0x0F}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_MESSAGING, "System.Runtime.Remoting.Messaging", {0x00, 0xDE, 0xB9, 0x40}},
+	{IDPRIME_NS_SYSTEM_DIAGNOSTICS,                "System.Diagnostics",                {0x00, 0x97, 0x99, 0x5F}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_COMPILERSERVICES,   "System.Runtime.CompilerServices",   {0x00, 0xF6, 0x3E, 0x11}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_SERIALIZATION,      "System.Runtime.Serialization",      {0x00, 0x8D, 0x3B, 0x3D}}, /* From libgtop11dotnet MarshallerCfg.h */
+	{IDPRIME_NS_SYSTEM_TEXT,                       "System.Text",                       {0x00, 0x70, 0x27, 0x56}},
+	{IDPRIME_NS_SMARTCARD,                         "SmartCard",                         {0x00, 0xF5, 0xEF, 0xBF}},
+	/* Not really clear this is the real namespace name */
+	{IDPRIME_NS_CARDMODULESERVICE,                 "CardModuleService",                 {0x00, 0xC0, 0x4B, 0x4E}},
+	{IDPRIME_NS_NETCARDFILESYSTEM,                 "NetcardFilesystem",                 {0x00, 0xA1, 0xAC, 0x39}}, /* From libgtop11dotnet MarshallerCfg.h */
+	{IDPRIME_NS_NONE,                              NULL,                                {0,    0,    0,    0   }}
+};
+
+typedef struct {
 	const idprimenet_type_hivecode_t *exception;
 	char *exception_msg;
 	const idprimenet_namespace_hivecode_t *namespace;
@@ -312,7 +318,7 @@ static int namespace_to_hivecode(const char *namespace, u8 hivecode[4]) {
 	return -1;
 }
 
-static const idprimenet_namespace_hivecode_t *hivecode_to_namespace(u8 hivecode[4]) {
+static const idprimenet_namespace_hivecode_t *hivecode_to_namespace(const u8 hivecode[4]) {
 	for (unsigned int i = 0; idprimenet_namespace_hivecodes[i].namespace; i++) {
 		if (idprimenet_namespace_hivecodes[i].hivecode[0] == hivecode[0]
 		 && idprimenet_namespace_hivecodes[i].hivecode[1] == hivecode[1]
@@ -324,7 +330,7 @@ static const idprimenet_namespace_hivecode_t *hivecode_to_namespace(u8 hivecode[
 	return NULL;
 }
 
-static const idprimenet_type_hivecode_t * hivecode_to_type(u8 hivecode[2]) {
+static const idprimenet_type_hivecode_t * hivecode_to_type(const u8 hivecode[2]) {
 	for (unsigned int i = 0; idprimenet_type_hivecodes[i].type != IDPRIME_TYPE_NONE; i++) {
 		if (idprimenet_type_hivecodes[i].hivecode[0] == hivecode[0]
 		 && idprimenet_type_hivecodes[i].hivecode[1] == hivecode[1]) {
@@ -334,7 +340,7 @@ static const idprimenet_type_hivecode_t * hivecode_to_type(u8 hivecode[2]) {
 	return NULL;
 }
 
-static const idprimenet_type_hivecode_t * hivecode_to_exception_type(u8 hivecode[2]) {
+static const idprimenet_type_hivecode_t * hivecode_to_exception_type(const u8 hivecode[2]) {
 	for (unsigned int i = 0; idprimenet_exception_type_hivecodes[i].type != IDPRIME_TYPE_NONE; i++) {
 		if (idprimenet_exception_type_hivecodes[i].hivecode[0] == hivecode[0]
 		 && idprimenet_exception_type_hivecodes[i].hivecode[1] == hivecode[1]) {
@@ -416,7 +422,8 @@ static int method_to_hivecode(const char *method, u8 hivecode[2]) {
 
 static int idprimenet_apdu_to_string(const u8 *data, size_t data_len, char *dest, size_t *dest_len) {
 	/* dest needs to be at least data_len+1 in size */
-	unsigned int strlen = (data[0] << 8) | data[1];
+	unsigned int strlen;
+	strlen = (data[0] << 8) | data[1];
 	if (*dest_len < strlen + 1) {
 		printf("Buffer isn't big enough for string");
 		return 0;
@@ -453,6 +460,44 @@ static int idprimenet_apdu_to_u1array(
 	return 0;
 }
 
+/*
+static int idprimenet_apdu_to_byte(
+		const u8 *data,
+		size_t data_len,
+		u8 *dest) {
+	if (!data_len) {
+		printf("Malformed data - too small for a byte\n");
+		return -1;
+	}
+	if (!dest) {
+		printf("Target buffer is null\n");
+		return -1;
+	}
+
+	*dest = *data;
+
+	return 0;
+}
+*/
+
+static int idprimenet_apdu_to_boolean(
+		const u8 *data,
+		size_t data_len,
+		u8 *dest) {
+	if (!data_len) {
+		printf("Malformed data - too small for a byte\n");
+		return -1;
+	}
+	if (!dest) {
+		printf("Target buffer is null\n");
+		return -1;
+	}
+
+	*dest = *data ? 1 : 0;
+
+	return 0;
+}
+
 static int idprimenet_apdu_to_s4array(
 		const u8 *data,
 		size_t data_len,
@@ -483,7 +528,79 @@ static int idprimenet_apdu_to_s4array(
 	return 0;
 }
 
-static sc_apdu_t *dotnet_op_to_apdu(struct sc_card *card, const dotnet_op_t *op) {
+static int args_to_adpu_data(u8 **data, size_t *data_len, const idprimenet_arg_t *args, const int args_len) {
+	size_t args_data_len = 0;
+	struct arg_data {
+		u8 *data;
+		size_t data_len;
+	};
+	struct arg_data args_data[args_len];
+	memset(args_data, 0, sizeof(struct arg_data) * args_len);
+
+	for (int i = 0; i < args_len; i++) {
+		size_t arg_data_len;
+		switch (args[i].type) {
+			// FIXME: goto error is wrong and doesn't clean up properly
+			case IDPRIME_TYPE_SYSTEM_BYTE:
+				{
+					if (args[i].value_len != 1)
+						goto error;
+					args_data[i].data = malloc(1);
+					if (!args_data[i].data) {
+						printf("malloc failure\n");
+						goto error;
+					}
+					args_data[i].data_len = 1;
+					*(args_data[i].data) = *(args[i].value);
+					args_data_len += 1;
+				}
+				break;
+			case IDPRIME_TYPE_SYSTEM_BYTE_ARRAY:
+				{
+					unsigned int array_len = args[i].value_len;
+					arg_data_len = 4 + array_len;
+					args_data[i].data = malloc(arg_data_len);
+					if (!args_data[i].data) {
+						printf("malloc failure\n");
+						goto error;
+					}
+					args_data[i].data_len = arg_data_len;
+					args_data[i].data[0] = (array_len >> 24) & 0xff;
+					args_data[i].data[1] = (array_len >> 16) & 0xff;
+					args_data[i].data[2] = (array_len >> 8) & 0xff;
+					args_data[i].data[3] = array_len & 0xff;
+					memcpy(args_data[i].data + 4, args[i].value, args[i].value_len);
+					args_data_len += arg_data_len;
+				}
+				break;
+			default:
+				printf("Don't know how to size arg type %d\n", args[i].type);
+				goto error;
+		}
+	}
+
+	*data_len = args_data_len;
+	*data = malloc(args_data_len);
+	if (!*data) goto error;
+
+	for (int i = 0; i < args_len; i++) {
+		memcpy(*data, args_data[i].data, args_data[i].data_len);
+		free(args_data[i].data);
+	}
+	return 0;
+
+error:
+	for (int i = 0; i < args_len; i++) {
+		if (args_data[i].data) free(args_data[i].data);
+	}
+	return 1;
+}
+
+static sc_apdu_t *dotnet_op_to_apdu(
+		struct sc_card *card,
+		const dotnet_op_t *op,
+		const idprimenet_arg_t *args,
+		const size_t args_len) {
 	unsigned int service_len;
 	u8 namespace[4], type[2], method[2];
 	unsigned int apdu_prefix_len = 1 /* 0xD8 */ + 2 /* port */ + 1 /* 0x6F */ + 4 /* NS */ + 2 /* type */ + 2 /* method */ + 2 /* service length */;
@@ -491,6 +608,8 @@ static sc_apdu_t *dotnet_op_to_apdu(struct sc_card *card, const dotnet_op_t *op)
 	u8 *apdu_data_ptr;
 	sc_apdu_t *apdu;
 	int cla;
+	u8 *args_data;
+	size_t args_data_len;
 
 	if (!op || !op->service)
 		return NULL;
@@ -523,10 +642,15 @@ static sc_apdu_t *dotnet_op_to_apdu(struct sc_card *card, const dotnet_op_t *op)
 		return NULL;
 	}
 
-	apdu_data_len = apdu_prefix_len + service_len;
+	if (args_to_adpu_data(&args_data, &args_data_len, args, args_len)) {
+		free(apdu);
+		return NULL;
+	}
+	apdu_data_len = apdu_prefix_len + service_len + args_data_len;
 	apdu_data_ptr = malloc(apdu_data_len);
 
 	if (!apdu_data_ptr) {
+		free(args_data);
 		free(apdu);
 		return NULL;
 	}
@@ -549,10 +673,35 @@ static sc_apdu_t *dotnet_op_to_apdu(struct sc_card *card, const dotnet_op_t *op)
 	*(apdu_data_ptr++) = service_len & 0xff00; /* FIXME: endianness? */
 	*(apdu_data_ptr++) = service_len & 0x00ff;
 	memcpy(apdu_data_ptr, op->service, service_len);
+	memcpy(apdu_data_ptr + service_len, args_data, args_data_len);
+	free(args_data);
 
 	//printf("APDU generated for: %s:0x%02x%02x [%s] (%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
 
 	return apdu;
+}
+
+static int idprimenet_parse_exception(dotnet_op_response_t *response, const unsigned char *resp, const size_t resplen) {
+	const idprimenet_type_hivecode_t *r_type;
+	const unsigned int resp_header_size = 6; // 4 bytes of namespace hivecode + 2 bytes of type hivecode
+
+	if (resplen < resp_header_size) return 1;
+
+	response->namespace = hivecode_to_namespace(resp);
+	r_type = hivecode_to_exception_type(resp + 4);
+	if (r_type) {
+		response->exception = r_type;
+		if (resplen > resp_header_size) {
+			// There's a message to go with this exception
+			response->exception_msg = malloc(resplen - (resp_header_size - 1));
+			if (!response->exception_msg) return 1;
+			memcpy(response->exception_msg, resp + resp_header_size, resplen - resp_header_size);
+			response->exception_msg[resplen - resp_header_size] = '\0';
+		}
+		return 0;
+	} else {
+		return 1;
+	}
 }
 
 static int idprimenet_op_call(
@@ -565,14 +714,16 @@ static int idprimenet_op_call(
 		char *service,
 		dotnet_op_response_t *response,
 		idprimenet_namespace_t expected_response_ns,
-		idprimenet_type_t expected_response_type
+		idprimenet_type_t expected_response_type,
+		const idprimenet_arg_t *args,
+		const size_t args_len
 	) {
 	int res;
 	dotnet_op_t op;
 	sc_apdu_t *apdu;
 	u8 *resp = NULL;
 	size_t resplen = 255; //FIXME: Be more flexible
-	unsigned int resp_header_size = 6; // 4 bytes of namespace hivecode + 2 bytes of type hivecode
+	const unsigned int resp_header_size = 6; // 4 bytes of namespace hivecode + 2 bytes of type hivecode
 	const idprimenet_type_hivecode_t *r_type;
 
 	if (!card) return 0;
@@ -588,7 +739,7 @@ static int idprimenet_op_call(
 	op.method = method,
 	op.service = service;
 
-	apdu = dotnet_op_to_apdu(card, &op);
+	apdu = dotnet_op_to_apdu(card, &op, args, args_len);
 	if (!apdu) return 0;
 
 	apdu->resp = resp;
@@ -602,35 +753,36 @@ static int idprimenet_op_call(
 		LOG_TEST_RET(card->ctx, res, "APDU transmit failed"); // TODO: See if this does what we actually want */
 	}
 
-	if (!strcmp("MSCM", service)) {
-		if (apdu->resplen < resp_header_size) {
-			if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID) {
-				// No data expected in the response
-				response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
-				response->data_len = 0;
-			} else {
-				printf("Response too short?!\n");
-			}
-
-			free(apdu);
-			return 1;
+	if (!strcmp("MSCM", service) && apdu->resplen < resp_header_size) {
+		if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID) {
+			// No data expected in the response
+			response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
+			response->data_len = 0;
+		} else {
+			printf("Response too short?!\n");
 		}
+
+		free(apdu);
+		return 1;
 	}
 
 	if (!strcmp("MSCM", service)) {
-		response->namespace = hivecode_to_namespace(resp);
-		r_type = hivecode_to_exception_type(resp + 4);
-		if (r_type) {
-			response->exception = r_type;
-			if (apdu->resplen > resp_header_size) {
-				// There's a message to go with this exception
-				response->exception_msg = malloc(apdu->resplen - (resp_header_size - 1));
-				if (!response->exception_msg) goto error;
-				memcpy(response->exception_msg, apdu->resp + resp_header_size, apdu->resplen - resp_header_size);
-				response->exception_msg[apdu->resplen - resp_header_size] = '\0';
+		// MSCM has its own special response format
+		if (idprimenet_parse_exception(response, apdu->resp, apdu->resplen)) {
+			if (apdu->resplen < resp_header_size) {
+				printf("Response too short - only %ld bytes\n", apdu->resplen);
+				goto error;
 			}
-		} else {
-			r_type = hivecode_to_type(resp + 4); // TODO: Check for failed lookup
+			response->namespace = hivecode_to_namespace(resp);
+			if (!response->namespace) {
+				printf("Couldn't determine response namespace\n");
+				goto error;
+			}
+			r_type = hivecode_to_type(apdu->resp + 4); // TODO: Check for failed lookup
+			if (!r_type) {
+				printf("Couldn't determine response data type for %02x %02x\n", *(apdu->resp + 4), *(apdu->resp + 5));
+				goto error;
+			}
 			response->data_type = r_type->type;
 			if (apdu->resplen > resp_header_size) {
 				response->data = malloc(apdu->resplen - resp_header_size);
@@ -663,23 +815,12 @@ static int idprimenet_op_call(
 				//TODO Data is [return value][output params] - handle output params
 				response->data = malloc(apdu->resplen - 1);
 				if (!response->data) goto error;
+				response->data_type = expected_response_type;
 				response->data_len = apdu->resplen - 1;
 				memcpy(response->data, apdu->resp + 1, response->data_len);
 				break;
 			case 0xff:
-				// TODO: Move this into a shared function
-				response->namespace = hivecode_to_namespace(resp);
-				r_type = hivecode_to_exception_type(resp + 4);
-				if (r_type) {
-					response->exception = r_type;
-					if (apdu->resplen > resp_header_size) {
-						// There's a message to go with this exception
-						response->exception_msg = malloc(apdu->resplen - (resp_header_size - 1));
-						if (!response->exception_msg) goto error;
-						memcpy(response->exception_msg, apdu->resp + resp_header_size, apdu->resplen - resp_header_size);
-						response->exception_msg[apdu->resplen - resp_header_size] = '\0';
-					}
-				}
+				if (idprimenet_parse_exception(response, apdu->resp + 1, apdu->resplen - 1)) goto error;
 				break;
 			default:
 				printf("Invalid first byte of non-MSCM response %02x\n", *resp);
@@ -717,7 +858,8 @@ static int idprimenet_op_mscm_getchallenge(
 		"MSCM",
 		response,
 		IDPRIME_NS_SYSTEM,
-		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY
+		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
+		NULL, 0
 	);
 
 	if (!res) {
@@ -768,7 +910,8 @@ static int idprimenet_op_contentmanager_getserialnumber(
 		"ContentManager",
 		response,
 		IDPRIME_NS_SYSTEM,
-		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY
+		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
+		NULL, 0
 	);
 
 	if (!res) {
@@ -819,7 +962,8 @@ static int idprimenet_op_mscm_getserialnumber(
 		"MSCM",
 		response,
 		IDPRIME_NS_SYSTEM,
-		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY
+		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
+		NULL, 0
 	);
 
 	if (!res) {
@@ -847,7 +991,103 @@ error:
 	return -1;
 }
 
-// TODO: Support commands with no response
+static int idprimenet_op_mscm_externalauthenticate(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		u8 *authresp,
+		size_t authresp_len) {
+	dotnet_op_response_t *response = dotnet_op_response_new();
+	int res;
+
+	idprimenet_arg_t args[1] = {
+		{ IDPRIME_TYPE_SYSTEM_BYTE_ARRAY, authresp_len, authresp }
+	};
+
+	if (!card    ) return -1;
+	if (!authresp) return -1;
+
+	res = idprimenet_op_call(
+		card,
+		0, 0x05,
+		"CardModuleService",
+		"CardModuleService",
+		"System.Void ExternalAuthenticate(System.Byte[])",
+		"MSCM",
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_VOID,
+		args, 1
+	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+	}
+
+	dotnet_op_response_destroy(response);
+	return 0;
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
+}
+
+static int idprimenet_op_mscm_isauthenticated (
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		u8 role,
+		u8 *answer) {
+	dotnet_op_response_t *response = dotnet_op_response_new();
+	int res;
+
+	idprimenet_arg_t args[1] = {
+		{ IDPRIME_TYPE_SYSTEM_BYTE, 1, &role }
+	};
+
+	if (!card) return -1;
+
+	res = idprimenet_op_call(
+		card,
+		0, 0x05,
+		"CardModuleService",
+		"CardModuleService",
+		"System.Boolean IsAuthenticated(System.Byte)",
+		"MSCM",
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_BOOLEAN,
+		args, 1
+	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+
+		if (idprimenet_apdu_to_boolean(response->data, response->data_len, answer)) {
+			goto error;
+		}
+	}
+
+	dotnet_op_response_destroy(response);
+	return 0;
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
+}
+
 static int idprimenet_op_mscm_forcegarbagecollector(
 		struct sc_card *card,
 		const idprimenet_type_hivecode_t **exception) {
@@ -865,7 +1105,8 @@ static int idprimenet_op_mscm_forcegarbagecollector(
 		"MSCM",
 		response,
 		IDPRIME_NS_SYSTEM,
-		IDPRIME_TYPE_SYSTEM_VOID
+		IDPRIME_TYPE_SYSTEM_VOID,
+		NULL, 0
 	);
 
 	if (!res) {
@@ -908,7 +1149,8 @@ static int idprimenet_op_mscm_getversion(
 		"MSCM", /* service name */
 		response,
 		IDPRIME_NS_SYSTEM,
-		IDPRIME_TYPE_SYSTEM_STRING
+		IDPRIME_TYPE_SYSTEM_STRING,
+		NULL, 0
 	);
 
 	if (!res) {
@@ -923,6 +1165,54 @@ static int idprimenet_op_mscm_getversion(
 		*exception = &idprimenet_type_none;
 
 		idprimenet_apdu_to_string(response->data, response->data_len, version_str, version_str_len);
+	}
+
+	dotnet_op_response_destroy(response);
+	return 0;
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
+}
+
+static int idprimenet_op_mscm_maxpinretrycounter(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		u8 *maxpinretrycounter) {
+	dotnet_op_response_t *response = dotnet_op_response_new();
+	int res;
+
+	if (!card              ) return -1;
+	if (!maxpinretrycounter) return -1;
+
+	res = idprimenet_op_call(
+		card,
+		0, 0x05, /* port */
+		"CardModuleService",
+		"CardModuleService",
+		"System.Byte MaxPinRetryCounter()", /* method */
+		"MSCM", /* service name */
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_BYTE,
+		NULL, 0
+	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+
+		if (response->data_len == 1) {
+			*maxpinretrycounter = *response->data;
+		} else {
+			printf("Expected one byte, got %ld bytes\n", response->data_len);
+		}
 	}
 
 	dotnet_op_response_destroy(response);
@@ -949,7 +1239,8 @@ static int idprimenet_op_mscm_queryfreespace(
 		"MSCM",
 		response,
 		IDPRIME_NS_SYSTEM,
-		IDPRIME_TYPE_SYSTEM_INT32_ARRAY
+		IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
+		NULL, 0
 	);
 	if (!res) goto error;
 
@@ -1011,7 +1302,8 @@ static int idprimenet_op_mscm_querykeysizes(
 		"MSCM",
 		response,
 		IDPRIME_NS_SYSTEM,
-		IDPRIME_TYPE_SYSTEM_INT32_ARRAY
+		IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
+		NULL, 0
 	);
 	if (!res) goto error;
 
@@ -1135,6 +1427,18 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
+		u8 maxpinretrycounter = 0;
+		if (idprimenet_op_mscm_maxpinretrycounter(card, &exception, &maxpinretrycounter)) {
+			printf("Failure retrieving max pin retry counter\n");
+		} else {
+			if (exception->type != IDPRIME_TYPE_NONE) {
+				printf("Exception %s retrieving max pin retry counter\n", exception->type_str);
+			} else {
+				printf("Max pin retry counter: 0x%02x\n", maxpinretrycounter);
+			}
+		}
+	}
+	{
 		if (idprimenet_op_mscm_forcegarbagecollector(card, &exception)) {
 			printf("Failure forcing GC\n");
 			return 0;
@@ -1149,18 +1453,42 @@ static int idprimenet_match_card(struct sc_card *card)
 	{
 		u8 serialnumber[255];
 		size_t serialnumber_len = 255;
-		if (idprimenet_op__getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
+		if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
 			printf("Failure retrieving serial number\n");
+		} else {
+			if (exception->type != IDPRIME_TYPE_NONE) {
+				printf("Exception %s retrieving serial number\n", exception->type_str);
+			} else {
+				printf("Serial number: 0x");
+				for (unsigned int i = 0; i < serialnumber_len; i++)
+					printf("%02x", serialnumber[i]);
+				printf("\n");
+			}
+		}
+	}
+	{
+		u8 authresp[1] = { 0 };
+		if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, sizeof(authresp))) {
+			printf("Failure sending auth response\n");
+		} else {
+			if (exception->type != IDPRIME_TYPE_NONE) {
+				printf("Exception %s sending auth response\n", exception->type_str);
+			} else {
+				printf("External auth didn't raise an error\n");
+			}
+		}
+	}
+	{
+		u8 role = 1, isauthenticated = 0;
+		if (idprimenet_op_mscm_isauthenticated(card, &exception, role, &isauthenticated)) {
+			printf("Failure querying auth status\n");
 			return 0;
 		}
 		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s retrieving serial number\n", exception->type_str);
+			printf("Exception %s querying auth status\n", exception->type_str);
 			return 0;
 		} else {
-			printf("Serial number: 0x");
-			for (unsigned int i = 0; i < serialnumber_len; i++)
-				printf("%02x", serialnumber[i]);
-			printf("\n");
+			printf("Is role %d authenticated? %d\n", role, isauthenticated);
 		}
 	}
 
