@@ -184,6 +184,11 @@ typedef struct {
 	u8 *value;
 } idprimenet_arg_t;
 
+typedef struct idprimenet_arg_list {
+	idprimenet_arg_t arg;
+	struct idprimenet_arg_list *next;
+} idprimenet_arg_list_t;
+
 typedef struct {
 	u8 port[2];
 	char *namespace;
@@ -528,54 +533,75 @@ static int idprimenet_apdu_to_s4array(
 	return 0;
 }
 
-static int args_to_adpu_data(u8 **data, size_t *data_len, const idprimenet_arg_t *args, const int args_len) {
+static int args_to_adpu_data(u8 **data, size_t *data_len, idprimenet_arg_list_t *args) {
 	size_t args_data_len = 0;
 	struct arg_data {
 		u8 *data;
 		size_t data_len;
 	};
-	struct arg_data args_data[args_len];
-	memset(args_data, 0, sizeof(struct arg_data) * args_len);
+	struct arg_data_list {
+		struct arg_data entry;
+		struct arg_data_list *next;
+	};
+	struct arg_data_list *args_data = NULL;
+	struct arg_data_list *args_data_head = args_data;
 
-	for (int i = 0; i < args_len; i++) {
+	for (idprimenet_arg_list_t *arg = args; arg != NULL; arg = arg->next) {
 		size_t arg_data_len;
-		switch (args[i].type) {
+		struct arg_data_list *elem;
+
+		elem = malloc(sizeof(struct arg_data_list));
+
+		if (elem == NULL) {
+			printf("malloc failure\n");
+			goto error;
+		}
+		elem->next = NULL;
+
+		switch (args->arg.type) {
 			// FIXME: goto error is wrong and doesn't clean up properly
 			case IDPRIME_TYPE_SYSTEM_BYTE:
 				{
-					if (args[i].value_len != 1)
+					if (arg->arg.value_len != 1)
 						goto error;
-					args_data[i].data = malloc(1);
-					if (!args_data[i].data) {
+					elem->entry.data = malloc(1);
+					if (elem->entry.data == NULL) {
 						printf("malloc failure\n");
 						goto error;
 					}
-					args_data[i].data_len = 1;
-					*(args_data[i].data) = *(args[i].value);
+					elem->entry.data_len = 1;
+					*(elem->entry.data) = *(arg->arg.value);
 					args_data_len += 1;
 				}
 				break;
 			case IDPRIME_TYPE_SYSTEM_BYTE_ARRAY:
 				{
-					unsigned int array_len = args[i].value_len;
+					unsigned int array_len = arg->arg.value_len;
 					arg_data_len = 4 + array_len;
-					args_data[i].data = malloc(arg_data_len);
-					if (!args_data[i].data) {
+					elem->entry.data = malloc(arg_data_len);
+					if (elem->entry.data == NULL) {
 						printf("malloc failure\n");
 						goto error;
 					}
-					args_data[i].data_len = arg_data_len;
-					args_data[i].data[0] = (array_len >> 24) & 0xff;
-					args_data[i].data[1] = (array_len >> 16) & 0xff;
-					args_data[i].data[2] = (array_len >> 8) & 0xff;
-					args_data[i].data[3] = array_len & 0xff;
-					memcpy(args_data[i].data + 4, args[i].value, args[i].value_len);
+					elem->entry.data_len = arg_data_len;
+					elem->entry.data[0] = (array_len >> 24) & 0xff;
+					elem->entry.data[1] = (array_len >> 16) & 0xff;
+					elem->entry.data[2] = (array_len >> 8) & 0xff;
+					elem->entry.data[3] = array_len & 0xff;
+					memcpy(elem->entry.data + 4, arg->arg.value, arg->arg.value_len);
 					args_data_len += arg_data_len;
 				}
 				break;
 			default:
-				printf("Don't know how to size arg type %d\n", args[i].type);
+				printf("Don't know how to size arg type %d\n", args->arg.type);
 				goto error;
+		}
+		args_data_head = elem;
+		if (args_data == NULL) {
+			args_data = args_data_head;
+		} else {
+			args_data->next = args_data_head;
+			args_data = args_data_head;
 		}
 	}
 
@@ -583,15 +609,15 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, const idprimenet_arg_t
 	*data = malloc(args_data_len);
 	if (!*data) goto error;
 
-	for (int i = 0; i < args_len; i++) {
-		memcpy(*data, args_data[i].data, args_data[i].data_len);
-		free(args_data[i].data);
+	for (struct arg_data_list *elem = args_data; elem != NULL; elem = elem->next) {
+		memcpy(*data, elem->entry.data, elem->entry.data_len);
+		free(elem->entry.data);
 	}
 	return 0;
 
 error:
-	for (int i = 0; i < args_len; i++) {
-		if (args_data[i].data) free(args_data[i].data);
+	for (struct arg_data_list *elem = args_data; elem != NULL; elem = elem->next) {
+		free(elem->entry.data);
 	}
 	return 1;
 }
@@ -599,8 +625,8 @@ error:
 static sc_apdu_t *dotnet_op_to_apdu(
 		struct sc_card *card,
 		const dotnet_op_t *op,
-		const idprimenet_arg_t *args,
-		const size_t args_len) {
+		idprimenet_arg_list_t *args
+) {
 	unsigned int service_len;
 	u8 namespace[4], type[2], method[2];
 	unsigned int apdu_prefix_len = 1 /* 0xD8 */ + 2 /* port */ + 1 /* 0x6F */ + 4 /* NS */ + 2 /* type */ + 2 /* method */ + 2 /* service length */;
@@ -642,7 +668,7 @@ static sc_apdu_t *dotnet_op_to_apdu(
 		return NULL;
 	}
 
-	if (args_to_adpu_data(&args_data, &args_data_len, args, args_len)) {
+	if (args_to_adpu_data(&args_data, &args_data_len, args)) {
 		free(apdu);
 		return NULL;
 	}
@@ -715,8 +741,7 @@ static int idprimenet_op_call(
 		dotnet_op_response_t *response,
 		idprimenet_namespace_t expected_response_ns,
 		idprimenet_type_t expected_response_type,
-		const idprimenet_arg_t *args,
-		const size_t args_len
+		idprimenet_arg_list_t *args
 	) {
 	int res;
 	dotnet_op_t op;
@@ -739,7 +764,7 @@ static int idprimenet_op_call(
 	op.method = method,
 	op.service = service;
 
-	apdu = dotnet_op_to_apdu(card, &op, args, args_len);
+	apdu = dotnet_op_to_apdu(card, &op, args);
 	if (!apdu) return 0;
 
 	apdu->resp = resp;
@@ -859,7 +884,7 @@ static int idprimenet_op_mscm_getchallenge(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
-		NULL, 0
+		NULL
 	);
 
 	if (!res) {
@@ -911,7 +936,7 @@ static int idprimenet_op_contentmanager_getserialnumber(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
-		NULL, 0
+		NULL
 	);
 
 	if (!res) {
@@ -963,7 +988,7 @@ static int idprimenet_op_mscm_getserialnumber(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
-		NULL, 0
+		NULL
 	);
 
 	if (!res) {
@@ -999,8 +1024,8 @@ static int idprimenet_op_mscm_externalauthenticate(
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	idprimenet_arg_t args[1] = {
-		{ IDPRIME_TYPE_SYSTEM_BYTE_ARRAY, authresp_len, authresp }
+	idprimenet_arg_list_t args = {
+		{ IDPRIME_TYPE_SYSTEM_BYTE_ARRAY, authresp_len, authresp }, NULL
 	};
 
 	if (!card    ) return -1;
@@ -1016,7 +1041,7 @@ static int idprimenet_op_mscm_externalauthenticate(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_VOID,
-		args, 1
+		&args
 	);
 
 	if (!res) {
@@ -1046,8 +1071,8 @@ static int idprimenet_op_mscm_isauthenticated (
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	idprimenet_arg_t args[1] = {
-		{ IDPRIME_TYPE_SYSTEM_BYTE, 1, &role }
+	idprimenet_arg_list_t args = {
+		{ IDPRIME_TYPE_SYSTEM_BYTE, 1, &role }, NULL
 	};
 
 	if (!card) return -1;
@@ -1062,7 +1087,7 @@ static int idprimenet_op_mscm_isauthenticated (
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BOOLEAN,
-		args, 1
+		&args
 	);
 
 	if (!res) {
@@ -1106,7 +1131,7 @@ static int idprimenet_op_mscm_forcegarbagecollector(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_VOID,
-		NULL, 0
+		NULL
 	);
 
 	if (!res) {
@@ -1150,7 +1175,7 @@ static int idprimenet_op_mscm_getversion(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_STRING,
-		NULL, 0
+		NULL
 	);
 
 	if (!res) {
@@ -1194,7 +1219,7 @@ static int idprimenet_op_mscm_maxpinretrycounter(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE,
-		NULL, 0
+		NULL
 	);
 
 	if (!res) {
@@ -1240,7 +1265,7 @@ static int idprimenet_op_mscm_queryfreespace(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
-		NULL, 0
+		NULL
 	);
 	if (!res) goto error;
 
@@ -1303,7 +1328,7 @@ static int idprimenet_op_mscm_querykeysizes(
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
-		NULL, 0
+		NULL
 	);
 	if (!res) goto error;
 
