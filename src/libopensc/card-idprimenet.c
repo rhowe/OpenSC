@@ -428,14 +428,81 @@ static int method_to_hivecode(const char *method, u8 hivecode[2]) {
 static int idprimenet_apdu_to_string(const u8 *data, size_t data_len, char *dest, size_t *dest_len) {
 	/* dest needs to be at least data_len+1 in size */
 	unsigned int strlen;
+	static const unsigned short header_len = 2;
+	if (data_len < header_len) {
+		printf("Malformed data - too small for a string\n");
+		return -1;
+	}
 	strlen = (data[0] << 8) | data[1];
 	if (*dest_len < strlen + 1) {
-		printf("Buffer isn't big enough for string");
+		printf("Buffer isn't big enough for string\n");
 		return 0;
 	}
-	memcpy(dest, data + 2, data_len - 2);
-	dest[data_len] = '\0';
-	*dest_len = data_len;
+	memcpy(dest, data + header_len, strlen);
+	dest[strlen] = '\0';
+	*dest_len = strlen + 1;
+
+	return 0;
+}
+
+struct idprimenet_string_array {
+	char *value;
+	struct idprimenet_string_array *next;
+};
+
+static struct idprimenet_string_array *idprimenet_string_array_new() {
+	struct idprimenet_string_array *elem = malloc(sizeof(struct idprimenet_string_array));
+	if (elem != NULL) {
+		elem->value = NULL;
+		elem->next = NULL;
+	}
+	return elem;
+}
+
+static void idprimenet_string_array_destroy(struct idprimenet_string_array *list) {
+	while (list != NULL) {
+		if (list->value != NULL) { free(list->value); }
+		list = list->next;
+	}
+}
+
+static int idprimenet_apdu_to_string_array(
+		const u8 *data,
+		size_t data_len,
+		struct idprimenet_string_array **dest) {
+	unsigned int array_len; // TODO: 4 bytes?
+	const unsigned short header_len = 4;
+	struct idprimenet_string_array **current = dest;
+	if (data_len < header_len) {
+		printf("Malformed data - too small for a string array\n");
+		return -1;
+	}
+	if (dest == NULL) {
+		printf("dest cannot be null\n");
+		return -1;
+	}
+
+	array_len = (data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+	data += 4;
+	data_len -= 4;
+
+	for (unsigned int i = 0; i < array_len; i++) {
+		struct idprimenet_string_array *elem = idprimenet_string_array_new();
+		size_t buf_len = 255; // FIXME: Fixed buffer :(
+		elem->value = malloc(buf_len);
+		if (idprimenet_apdu_to_string(data, data_len, elem->value, &buf_len)) {
+			idprimenet_string_array_destroy(elem);
+			return -1;
+		}
+		data += buf_len + 2 - 1; /* 2 byte header, 1 byte terminator */
+		data_len -= buf_len + 2 - 1;
+		if (*current == NULL) {
+			*current = elem;
+		} else {
+			(*current)->next = elem;
+		}
+		current = &(elem->next);
+	}
 
 	return 0;
 }
@@ -589,6 +656,25 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, idprimenet_arg_list_t 
 					elem->entry.data[2] = (array_len >> 8) & 0xff;
 					elem->entry.data[3] = array_len & 0xff;
 					memcpy(elem->entry.data + 4, arg->arg.value, arg->arg.value_len);
+					args_data_len += arg_data_len;
+				}
+				break;
+			case IDPRIME_TYPE_SYSTEM_STRING:
+				{
+					unsigned int string_len = arg->arg.value_len;
+					const unsigned int header_len = 2;
+					arg_data_len = header_len + string_len;
+					elem->entry.data = malloc(arg_data_len);
+					if (elem->entry.data == NULL) {
+						printf("malloc failure\n");
+						goto error;
+					}
+					elem->entry.data_len = arg_data_len;
+					elem->entry.data[0] = (string_len >> 8) & 0xff;
+					elem->entry.data[1] = string_len & 0xff;
+					if (string_len > 0) {
+						memcpy(elem->entry.data + header_len, arg->arg.value, arg->arg.value_len - 1);
+					}
 					args_data_len += arg_data_len;
 				}
 				break;
@@ -1199,6 +1285,57 @@ error:
 	return -1;
 }
 
+// TODO: Return the data somehow
+static int idprimenet_op_mscm_getfiles(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		char *path,
+		struct idprimenet_string_array **dest) {
+	dotnet_op_response_t *response = dotnet_op_response_new();
+	int res;
+
+	idprimenet_arg_list_t args = {
+		{ IDPRIME_TYPE_SYSTEM_STRING, strlen(path), (u8*)path}, NULL /* Pretend the terminating byte isn't there */
+	};
+
+	if (!card) return -1;
+	if (!path) return -1;
+	if (!dest) return -1;
+
+	res = idprimenet_op_call(
+		card,
+		0, 0x05, /* port */
+		"CardModuleService",
+		"CardModuleService",
+		"System.String[] GetFiles(System.String)", /* method */
+		"MSCM", /* service name */
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_STRING_ARRAY,
+		&args
+	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+
+		idprimenet_apdu_to_string_array(response->data, response->data_len, dest);
+	}
+
+	dotnet_op_response_destroy(response);
+	return 0;
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
+}
+
 static int idprimenet_op_mscm_maxpinretrycounter(
 		struct sc_card *card,
 		const idprimenet_type_hivecode_t **exception,
@@ -1516,8 +1653,56 @@ static int idprimenet_match_card(struct sc_card *card)
 			printf("Is role %d authenticated? %d\n", role, isauthenticated);
 		}
 	}
+	{
+		char *path = "";
+		struct idprimenet_string_array *results = NULL;
+		if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
+			printf("Failure querying files for '%s'\n", path);
+			idprimenet_string_array_destroy(results);
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s querying files for '%s'\n", exception->type_str, path);
+			idprimenet_string_array_destroy(results);
+			return 0;
+		} else {
+			printf("Files on card:\n");
+			for (struct idprimenet_string_array *elem = results; elem != NULL; elem = elem->next) {
+				printf(" - %s\n", elem->value);
+			}
+			idprimenet_string_array_destroy(results);
+		}
+	}
 
 	return 1;
+}
+
+/* TODO: Figure out wtf I'm supposed to do here */
+int idprimenet_select_file(sc_card_t *card, const sc_path_t *path, sc_file_t **file) {
+	return SC_SUCCESS;
+}
+
+int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
+	char *path = "";
+	const idprimenet_type_hivecode_t *exception;
+	struct idprimenet_string_array *results = NULL;
+	if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
+		printf("Failure querying files for '%s'\n", path);
+		idprimenet_string_array_destroy(results);
+		return 0;
+	}
+	if (exception->type != IDPRIME_TYPE_NONE) {
+		printf("Exception %s querying files for '%s'\n", exception->type_str, path);
+		idprimenet_string_array_destroy(results);
+		return 0;
+	} else {
+			printf("Files on card:\n");
+		for (struct idprimenet_string_array *elem = results; elem != NULL; elem = elem->next) {
+			printf(" - %s\n", elem->value);
+		}
+		idprimenet_string_array_destroy(results);
+	}
+	return 0;
 }
 
 static int
@@ -1540,6 +1725,8 @@ static struct sc_card_driver * sc_get_driver(void)
 
 	idprimenet_ops.match_card = idprimenet_match_card;
 	idprimenet_ops.init = idprimenet_init;
+	idprimenet_ops.select_file = idprimenet_select_file;
+	idprimenet_ops.list_files = idprimenet_list_files;
 
 	return &idprimenet_drv;
 }
