@@ -1336,6 +1336,67 @@ error:
 	return -1;
 }
 
+static int idprimenet_op_mscm_readfile(
+		struct sc_card *card,
+		const idprimenet_type_hivecode_t **exception,
+		char *path,
+		u8 *data,
+		size_t *data_len) {
+	dotnet_op_response_t *response;
+	int res;
+	idprimenet_arg_list_t args = {
+		{ IDPRIME_TYPE_SYSTEM_STRING, strlen(path), (u8*)path}, NULL/* Pretend the terminating byte isn't there */
+	};
+	idprimenet_arg_list_t args2 = {
+		{ IDPRIME_TYPE_SYSTEM_INT32,  1,            (int *)data_len }, NULL
+	};
+	args.next = &args2;
+
+	if (!card    ) return -1;
+	if (!path    ) return -1;
+	if (!data    ) return -1;
+	if (!data_len) return -1;
+
+	response = dotnet_op_response_new();
+
+	res = idprimenet_op_call(
+		card,
+		0, 0x05,
+		"CardModuleService",
+		"CardModuleService",
+		"System.Byte[] ReadFile(System.String,System.Int32)",
+		"MSCM",
+		response,
+		IDPRIME_NS_SYSTEM,
+		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
+		&args
+	);
+
+	if (!res) {
+		printf("Failure talking to card\n");
+		goto error;
+	}
+
+	if (response->exception->type != IDPRIME_TYPE_NONE) {
+		*exception = response->exception;
+		// TODO: Return the response->exception_msg somehow
+	} else {
+		*exception = &idprimenet_type_none;
+
+		if (idprimenet_apdu_to_u1array(response->data, response->data_len, data, data_len)) {
+			printf("Failed to process response\n");
+			goto error;
+		}
+	}
+
+	dotnet_op_response_destroy(response);
+	return 0;
+
+error:
+	dotnet_op_response_destroy(response);
+	return -1;
+}
+
 static int idprimenet_op_mscm_maxpinretrycounter(
 		struct sc_card *card,
 		const idprimenet_type_hivecode_t **exception,
@@ -1671,6 +1732,21 @@ static int idprimenet_match_card(struct sc_card *card)
 				printf(" - %s\n", elem->value);
 			}
 			idprimenet_string_array_destroy(results);
+		}
+	}
+	{
+		char *path = "cardid";
+		size_t buf_len = 16384;
+		u8 buf[buf_len];
+		if (idprimenet_op_mscm_readfile(card, &exception, path, buf, &buf_len)) {
+			printf("Failure reading '%s'\n", path);
+			return 0;
+		}
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s reading '%s'\n", exception->type_str, path);
+			return 0;
+		} else {
+			printf("Read %ld bytes from %s\n", buf_len, path);
 		}
 	}
 
