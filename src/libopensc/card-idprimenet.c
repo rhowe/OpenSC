@@ -35,6 +35,7 @@
 
 #include <openssl/evp.h>
 
+#include "cardctl.h"
 #include "internal.h"
 
 typedef enum {
@@ -1821,9 +1822,28 @@ int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
 	}
 	return 0;
 }
+static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number *serial)
+{
+	u8 serialnumber[255];
+	size_t serialnumber_len = 255;
+	struct sc_context *ctx = card->ctx;
+	const idprimenet_type_hivecode_t *exception;
 
-static int
-idprimenet_init(struct sc_card *card)
+	LOG_FUNC_CALLED(ctx);
+	if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
+		printf("Failure retrieving serial number\n");
+	} else {
+		if (exception->type != IDPRIME_TYPE_NONE) {
+			printf("Exception %s retrieving serial number\n", exception->type_str);
+		} else {
+			memcpy(serial->value, serialnumber, serialnumber_len);
+			serial->len = serialnumber_len;
+		}
+	}
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
+static int idprimenet_init(struct sc_card *card)
 {
 	LOG_FUNC_CALLED(card->ctx);
 
@@ -1833,6 +1853,15 @@ idprimenet_init(struct sc_card *card)
 	LOG_FUNC_RETURN(card->ctx, SC_SUCCESS);
 }
 
+static int idprimenet_card_ctl(struct sc_card *card, unsigned long cmd, void *ptr)
+{
+	switch (cmd) {
+	case SC_CARDCTL_GET_SERIALNR:
+		return idprimenet_get_serialnr(card, (struct sc_serial_number *)ptr);
+	}
+	return SC_ERROR_NOT_SUPPORTED;
+}
+
 static struct sc_card_driver * sc_get_driver(void)
 {
 	struct sc_card_driver *iso_drv = sc_get_iso7816_driver();
@@ -1840,10 +1869,11 @@ static struct sc_card_driver * sc_get_driver(void)
 	iso_ops = iso_drv->ops;
 	idprimenet_ops = *iso_ops;
 
-	idprimenet_ops.match_card = idprimenet_match_card;
+	idprimenet_ops.card_ctl = idprimenet_card_ctl;
 	idprimenet_ops.init = idprimenet_init;
-	idprimenet_ops.select_file = idprimenet_select_file;
 	idprimenet_ops.list_files = idprimenet_list_files;
+	idprimenet_ops.match_card = idprimenet_match_card;
+	idprimenet_ops.select_file = idprimenet_select_file;
 
 	return &idprimenet_drv;
 }
