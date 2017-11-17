@@ -1015,6 +1015,7 @@ static int westcos_card_ctl(sc_card_t * card, unsigned long cmd, void *ptr)
 				return (r);
 			return r;
 		}
+		__attribute__((fallthrough));
 	case SC_CARDCTL_WESTCOS_SET_DEFAULT_KEY:
 		priv_data->default_key = *((sc_autkey_t *) ptr);
 		return 0;

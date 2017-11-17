@@ -346,6 +346,7 @@ iasecc_file_convert_acls(struct sc_context *ctx, struct sc_profile *profile, str
 					acl->method = SC_AC_PRO;
 					acl->key_ref &= IASECC_SCB_METHOD_MASK_REF;
 				}
+				break;
 			}
 		}
 	}

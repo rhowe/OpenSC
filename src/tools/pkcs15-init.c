@@ -2894,6 +2894,7 @@ parse_commandline(int argc, char **argv)
 			/* fall through */
 		case required_argument:
 			*sp++ = ':';
+			__attribute__((fallthrough));
 		case no_argument:
 			break;
 		default:

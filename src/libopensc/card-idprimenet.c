@@ -1855,11 +1855,13 @@ static int idprimenet_init(struct sc_card *card)
 
 static int idprimenet_card_ctl(struct sc_card *card, unsigned long cmd, void *ptr)
 {
+	LOG_FUNC_CALLED(card->ctx);
 	switch (cmd) {
 	case SC_CARDCTL_GET_SERIALNR:
-		return idprimenet_get_serialnr(card, (struct sc_serial_number *)ptr);
+		// There are many ways to do this
+		LOG_FUNC_RETURN(card->ctx, idprimenet_get_serialnr(card, (struct sc_serial_number *)ptr));
 	}
-	return SC_ERROR_NOT_SUPPORTED;
+	LOG_FUNC_RETURN(card->ctx, SC_ERROR_NOT_SUPPORTED);
 }
 
 static struct sc_card_driver * sc_get_driver(void)

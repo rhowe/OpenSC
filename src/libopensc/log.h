@@ -125,6 +125,7 @@ const char * sc_dump_oid(const struct sc_object_id *oid);
 } while(0)
 #define LOG_FUNC_RETURN(ctx, r) SC_FUNC_RETURN((ctx), SC_LOG_DEBUG_NORMAL, (r))
 
+// fallthrough
 #define SC_TEST_RET(ctx, level, r, text) do { \
 	int _ret = (r); \
 	if (_ret < 0) { \

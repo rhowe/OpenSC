@@ -553,7 +553,7 @@ static int itacns_add_data_files(sc_pkcs15_card_t *p15card)
 	}
 
 	{
-		char fullname[160];
+		char fullname[512];
 		if(get_name_from_EF_DatiPersonali(p15_personaldata->data,
 			fullname, sizeof(fullname))) {
 			sc_debug(p15card->card->ctx, SC_LOG_DEBUG_NORMAL,
