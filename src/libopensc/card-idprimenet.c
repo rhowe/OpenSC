@@ -111,6 +111,11 @@ typedef struct {
 /* These could be calculated if we knew what the public key token
  * of the relevant assemblies were
  */
+
+static const idprimenet_type_hivecode_t idprimenet_type_none = {
+	IDPRIME_TYPE_NONE,                     NULL,                        {0,    0   }
+};
+
 static const idprimenet_type_hivecode_t idprimenet_type_hivecodes[] = {
 	{IDPRIME_TYPE_SYSTEM_VOID,              "System.Void",              {0xCE, 0xB1}},
 	{IDPRIME_TYPE_SYSTEM_INT32,             "System.Int32",             {0x61, 0xC0}},
@@ -138,10 +143,6 @@ static const idprimenet_type_hivecode_t idprimenet_type_hivecodes[] = {
 	{IDPRIME_TYPE_SYSTEM_IO_MEMORYSTREAM,   "System.IO.MemoryStream",   {0xFE, 0xD7}},
 	{IDPRIME_TYPE_SMARTCARD_CONTENTMANAGER, "SmartCard.ContentManager", {0xB1, 0x8C}},
 	{IDPRIME_TYPE_NONE,                     NULL,                       {0,    0   }}
-};
-
-static const idprimenet_type_hivecode_t idprimenet_type_none = {
-	IDPRIME_TYPE_NONE,                     NULL,                        {0,    0   }
 };
 
 static const idprimenet_type_hivecode_t idprimenet_exception_type_hivecodes[] = {
@@ -275,8 +276,47 @@ static const idprimenet_namespace_hivecode_t idprimenet_namespace_hivecodes[] = 
 };
 
 typedef struct {
-	const idprimenet_type_hivecode_t *exception;
-	char *exception_msg;
+	const idprimenet_type_hivecode_t *type;
+	char *message;
+} dotnet_exception_t;
+
+static dotnet_exception_t *dotnet_exception_new() {
+	dotnet_exception_t *res = malloc(sizeof(dotnet_exception_t));
+	if (res == NULL) return NULL;
+
+	res->type = &idprimenet_type_none;
+	res->message = NULL;
+
+	return res;
+}
+
+static void dotnet_exception_destroy(dotnet_exception_t *exception) {
+	if (exception->message != NULL) free(exception->message);
+	free(exception);
+}
+
+static dotnet_exception_t *dotnet_exception_clone(dotnet_exception_t *src) {
+	dotnet_exception_t *res = malloc(sizeof(dotnet_exception_t));
+	if (res == NULL) return NULL;
+
+	res->type = src->type;
+	if (src->message == NULL)
+		res->message = NULL;
+	else {
+		res->message = strdup(src->message);
+		if (res->message == NULL) {
+			free(res);
+			res = NULL;
+		}
+	}
+
+	return res;
+}
+
+#define DOTNET_PRINT_EXCEPTION(msg, exception) printf("%s: %s: %s\n", msg, exception->type->type_str, exception->message == NULL ? "(no message)" : exception->message)
+
+typedef struct {
+	dotnet_exception_t *exception;
 	const idprimenet_namespace_hivecode_t *namespace;
 	idprimenet_type_t data_type;
 	u8 *data;
@@ -285,9 +325,10 @@ typedef struct {
 
 static dotnet_op_response_t *dotnet_op_response_new() {
 	dotnet_op_response_t *res = malloc(sizeof(dotnet_op_response_t));
+	if (res == NULL) return NULL;
 
-	res->exception = &idprimenet_type_none;
-	res->exception_msg = NULL,
+	res->exception = NULL;
+
 	res->data_type = IDPRIME_TYPE_NONE;
 	res->data = NULL;
 	res->data_len = 0;
@@ -295,11 +336,13 @@ static dotnet_op_response_t *dotnet_op_response_new() {
 	return res;
 }
 
-// TODO: Catch errors freeing
 static void dotnet_op_response_destroy(dotnet_op_response_t *res) {
-	if (res) {
-		if (res->exception_msg) free(res->exception_msg);
-		if (res->data)          free(res->data);
+	if (res != NULL) {
+		if (res->exception != NULL && res->exception->message != NULL)
+			free(res->exception->message);
+
+		if (res->data != NULL)
+			free(res->data);
 		free(res);
 	}
 }
@@ -827,16 +870,19 @@ static int idprimenet_parse_exception(dotnet_op_response_t *response, const unsi
 
 	if (resplen < resp_header_size) return 1;
 
-	response->namespace = hivecode_to_namespace(resp);
 	r_type = hivecode_to_exception_type(resp + 4);
 	if (r_type) {
-		response->exception = r_type;
+		response->exception = dotnet_exception_new();
+		if (response->exception == NULL) { return 1; }
+
+		response->namespace = hivecode_to_namespace(resp);
+		response->exception->type = r_type;
 		if (resplen > resp_header_size) {
 			// There's a message to go with this exception
-			response->exception_msg = malloc(resplen - (resp_header_size - 1));
-			if (!response->exception_msg) return 1;
-			memcpy(response->exception_msg, resp + resp_header_size, resplen - resp_header_size);
-			response->exception_msg[resplen - resp_header_size] = '\0';
+			response->exception->message = malloc(resplen - resp_header_size + 1);
+			if (!response->exception->message) return 1;
+			memcpy(response->exception->message, resp + resp_header_size, resplen - resp_header_size);
+			response->exception->message[resplen - resp_header_size] = '\0';
 		}
 		return 0;
 	} else {
@@ -980,15 +1026,17 @@ error:
 
 static int idprimenet_op_mscm_getchallenge(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		u8 *challenge,
 		size_t *challenge_len) {
 	dotnet_op_response_t *response;
 	int res;
 
-	if (!card         ) return -1;
-	if (!challenge    ) return -1;
-	if (!challenge_len) return -1;
+	if (card == NULL         ) return -1;
+	if (challenge == NULL    ) return -1;
+	if (challenge_len == NULL) return -1;
+	if (exception == NULL    ) return -1;
+	if (*exception != NULL   ) return -1;
 
 	response = dotnet_op_response_new();
 
@@ -1010,12 +1058,10 @@ static int idprimenet_op_mscm_getchallenge(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, challenge, challenge_len)) {
 			printf("Failed to process response\n");
 			goto error;
@@ -1032,15 +1078,17 @@ error:
 
 static int idprimenet_op_contentmanager_getserialnumber(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		u8 *serialnumber,
 		size_t *serialnumber_len) {
 	dotnet_op_response_t *response;
 	int res;
 
-	if (!card            ) return -1;
-	if (!serialnumber    ) return -1;
-	if (!serialnumber_len) return -1;
+	if (card == NULL            ) return -1;
+	if (exception == NULL       ) return -1;
+	if (serialnumber == NULL    ) return -1;
+	if (serialnumber_len == NULL) return -1;
+	if (*exception != NULL      ) return -1;
 
 	response = dotnet_op_response_new();
 
@@ -1062,12 +1110,10 @@ static int idprimenet_op_contentmanager_getserialnumber(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, serialnumber, serialnumber_len)) {
 			printf("Failed to process response\n");
 			goto error;
@@ -1084,15 +1130,17 @@ error:
 
 static int idprimenet_op_mscm_getserialnumber(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		u8 *serialnumber,
 		size_t *serialnumber_len) {
 	dotnet_op_response_t *response;
 	int res;
 
-	if (!card            ) return -1;
-	if (!serialnumber    ) return -1;
-	if (!serialnumber_len) return -1;
+	if (card == NULL            ) return -1;
+	if (serialnumber == NULL    ) return -1;
+	if (serialnumber_len == NULL) return -1;
+	if (exception == NULL       ) return -1;
+	if (*exception != NULL      ) return -1;
 
 	response = dotnet_op_response_new();
 
@@ -1114,12 +1162,10 @@ static int idprimenet_op_mscm_getserialnumber(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, serialnumber, serialnumber_len)) {
 			printf("Failed to process response\n");
 			goto error;
@@ -1136,7 +1182,7 @@ error:
 
 static int idprimenet_op_mscm_externalauthenticate(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		u8 *authresp,
 		size_t authresp_len) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
@@ -1148,8 +1194,10 @@ static int idprimenet_op_mscm_externalauthenticate(
 		authresp
 	};
 
-	if (!card    ) return -1;
-	if (!authresp) return -1;
+	if (card == NULL      ) return -1;
+	if (authresp == NULL  ) return -1;
+	if (exception == NULL ) return -1;
+	if (*exception != NULL) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1170,11 +1218,9 @@ static int idprimenet_op_mscm_externalauthenticate(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
-	} else {
-		*exception = &idprimenet_type_none;
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	}
 
 	dotnet_op_response_destroy(response);
@@ -1186,7 +1232,7 @@ error:
 
 static int idprimenet_op_mscm_isauthenticated (
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		u8 role,
 		u8 *answer) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
@@ -1198,7 +1244,9 @@ static int idprimenet_op_mscm_isauthenticated (
 		&role
 	};
 
-	if (!card) return -1;
+	if (card == NULL      ) return -1;
+	if (exception == NULL ) return -1;
+	if (*exception != NULL) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1219,12 +1267,10 @@ static int idprimenet_op_mscm_isauthenticated (
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		if (idprimenet_apdu_to_boolean(response->data, response->data_len, answer)) {
 			goto error;
 		}
@@ -1239,11 +1285,13 @@ error:
 
 static int idprimenet_op_mscm_forcegarbagecollector(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception) {
+		dotnet_exception_t **exception) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (!card           ) return -1;
+	if (card == NULL      ) return -1;
+	if (exception == NULL ) return -1;
+	if (*exception != NULL) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1263,11 +1311,9 @@ static int idprimenet_op_mscm_forcegarbagecollector(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
-	} else {
-		*exception = &idprimenet_type_none;
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	}
 
 	dotnet_op_response_destroy(response);
@@ -1279,15 +1325,15 @@ error:
 
 static int idprimenet_op_mscm_getversion(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		char *version_str,
 		size_t *version_str_len) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (!card           ) return -1;
-	if (!version_str    ) return -1;
-	if (!version_str_len) return -1;
+	if (card == NULL      ) return -1;
+	if (exception == NULL ) return -1;
+	if (*exception != NULL) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1307,12 +1353,10 @@ static int idprimenet_op_mscm_getversion(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		idprimenet_apdu_to_string(response->data, response->data_len, version_str, version_str_len);
 	}
 
@@ -1326,7 +1370,7 @@ error:
 // TODO: Return the data somehow
 static int idprimenet_op_mscm_getfiles(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		char *path,
 		struct idprimenet_string_array **dest) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
@@ -1338,9 +1382,11 @@ static int idprimenet_op_mscm_getfiles(
 		(u8*)path
 	};
 
-	if (!card) return -1;
-	if (!path) return -1;
-	if (!dest) return -1;
+	if (card == NULL      ) return -1;
+	if (path == NULL      ) return -1;
+	if (dest == NULL      ) return -1;
+	if (exception == NULL ) return -1;
+	if (*exception != NULL) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1361,12 +1407,10 @@ static int idprimenet_op_mscm_getfiles(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		idprimenet_apdu_to_string_array(response->data, response->data_len, dest);
 	}
 
@@ -1379,7 +1423,7 @@ error:
 
 static int idprimenet_op_mscm_readfile(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		char *path,
 		u8 *data,
 		size_t *data_len) {
@@ -1396,10 +1440,12 @@ static int idprimenet_op_mscm_readfile(
 		data_len
 	};
 
-	if (!card    ) return -1;
-	if (!path    ) return -1;
-	if (!data    ) return -1;
-	if (!data_len) return -1;
+	if (card == NULL      ) return -1;
+	if (path == NULL      ) return -1;
+	if (data == NULL      ) return -1;
+	if (data_len == NULL  ) return -1;
+	if (exception == NULL ) return -1;
+	if (*exception != NULL) return -1;
 
 	response = dotnet_op_response_new();
 
@@ -1423,12 +1469,10 @@ static int idprimenet_op_mscm_readfile(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, data, data_len)) {
 			printf("Failed to process response\n");
 			goto error;
@@ -1445,13 +1489,15 @@ error:
 
 static int idprimenet_op_mscm_maxpinretrycounter(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		u8 *maxpinretrycounter) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (!card              ) return -1;
-	if (!maxpinretrycounter) return -1;
+	if (card == NULL              ) return -1;
+	if (maxpinretrycounter == NULL) return -1;
+	if (exception  == NULL        ) return -1;
+	if (*exception != NULL        ) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1471,12 +1517,10 @@ static int idprimenet_op_mscm_maxpinretrycounter(
 		goto error;
 	}
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		if (response->data_len == 1) {
 			*maxpinretrycounter = *response->data;
 		} else {
@@ -1493,11 +1537,17 @@ error:
 
 static int idprimenet_op_mscm_queryfreespace(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		int *freespace,
 		size_t *freespace_len) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
+
+	if (card == NULL         ) return -1;
+	if (freespace == NULL    ) return -1;
+	if (freespace_len == NULL) return -1;
+	if (exception  == NULL   ) return -1;
+	if (*exception != NULL   ) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1513,12 +1563,10 @@ static int idprimenet_op_mscm_queryfreespace(
 	);
 	if (!res) goto error;
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
-		*exception = &idprimenet_type_none;
-
 		idprimenet_apdu_to_s4array(response->data, response->data_len, freespace, freespace_len);
 		// Response seen to be 3 ints: 0x0001, 0x000f, 0xb468
 
@@ -1557,10 +1605,15 @@ typedef struct {
 
 static int idprimenet_op_mscm_querykeysizes(
 		struct sc_card *card,
-		const idprimenet_type_hivecode_t **exception,
+		dotnet_exception_t **exception,
 		idprimenet_key_sizes_t *key_sizes) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
+
+	if (card == NULL      ) return -1;
+	if (key_sizes == NULL ) return -1;
+	if (exception  == NULL) return -1;
+	if (*exception != NULL) return -1;
 
 	res = idprimenet_op_call(
 		card,
@@ -1576,13 +1629,12 @@ static int idprimenet_op_mscm_querykeysizes(
 	);
 	if (!res) goto error;
 
-	if (response->exception->type != IDPRIME_TYPE_NONE) {
-		*exception = response->exception;
-		// TODO: Return the response->exception_msg somehow
+	if (response->exception != NULL) {
+		*exception = dotnet_exception_clone(response->exception);
+		if (*exception == NULL) goto error;
 	} else {
 		size_t key_sizes_data_len = 4;
 		int key_sizes_data[key_sizes_data_len];
-		*exception = &idprimenet_type_none;
 
 		idprimenet_apdu_to_s4array(response->data, response->data_len, key_sizes_data, &key_sizes_data_len);
 
@@ -1607,34 +1659,37 @@ error:
 static int idprimenet_match_card(struct sc_card *card)
 {
 	int i;
-	const idprimenet_type_hivecode_t *exception;
 
 	i = _sc_match_atr(card, idprimenet_atrs, &card->type);
 	if (i < 0) return 0;
 
 	{
+		dotnet_exception_t *exception = NULL;
 		char version[255];
 		size_t version_len = 255;
 		if (idprimenet_op_mscm_getversion(card, &exception, version, &version_len)) {
 			printf("Failure retrieving version\n");
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s retrieving version\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s retrieving version\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("Card version (%ld chars) %s\n", version_len, version);
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		u8 serialnumber[255];
 		size_t serialnumber_len = 255;
 		if (idprimenet_op_mscm_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
 			printf("Failure retrieving serial number\n");
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s retrieving serial number\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s retrieving serial number\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("Serial number: 0x");
@@ -1644,14 +1699,16 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		int freespace[255];
 		size_t freespace_len = 255;
 		if (idprimenet_op_mscm_queryfreespace(card, &exception, freespace, &freespace_len)) {
 			printf("Failure retrieving freespace\n");
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s retrieving freespace\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s retrieving freespace\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("Freespace: 0x");
@@ -1661,13 +1718,15 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		idprimenet_key_sizes_t keysizes = {0, 0, 0, 0};
 		if (idprimenet_op_mscm_querykeysizes(card, &exception, &keysizes)) {
 			printf("Failure retrieving keysizes\n");
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s retrieving keysizes\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s retrieving keysizes\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("Key sizes: min: %d, default: %d, max: %d, incremental: %d\n",
@@ -1679,14 +1738,16 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		u8 challenge[255];
 		size_t challenge_len = 255;
 		if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
 			printf("Failure retrieving challenge\n");
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s retrieving challenge\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s retrieving challenge\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("Challenge: 0x");
@@ -1696,37 +1757,43 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		u8 maxpinretrycounter = 0;
 		if (idprimenet_op_mscm_maxpinretrycounter(card, &exception, &maxpinretrycounter)) {
 			printf("Failure retrieving max pin retry counter\n");
 		} else {
-			if (exception->type != IDPRIME_TYPE_NONE) {
-				printf("Exception %s retrieving max pin retry counter\n", exception->type_str);
+			if (exception != NULL) {
+				DOTNET_PRINT_EXCEPTION("Exception retrieving max pin retry counter", exception);
+				dotnet_exception_destroy(exception);
 			} else {
 				printf("Max pin retry counter: 0x%02x\n", maxpinretrycounter);
 			}
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		if (idprimenet_op_mscm_forcegarbagecollector(card, &exception)) {
 			printf("Failure forcing GC\n");
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s forcing GC\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s forcing GC\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("GC forced\n");
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		u8 serialnumber[255];
 		size_t serialnumber_len = 255;
 		if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
 			printf("Failure retrieving serial number\n");
 		} else {
-			if (exception->type != IDPRIME_TYPE_NONE) {
-				printf("Exception %s retrieving serial number\n", exception->type_str);
+			if (exception != NULL) {
+				printf("Exception %s retrieving serial number\n", exception->type->type_str);
+				dotnet_exception_destroy(exception);
 			} else {
 				printf("Serial number: 0x");
 				for (unsigned int i = 0; i < serialnumber_len; i++)
@@ -1736,31 +1803,36 @@ static int idprimenet_match_card(struct sc_card *card)
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		u8 authresp[1] = { 0 };
 		if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, sizeof(authresp))) {
 			printf("Failure sending auth response\n");
 		} else {
-			if (exception->type != IDPRIME_TYPE_NONE) {
-				printf("Exception %s sending auth response\n", exception->type_str);
+			if (exception != NULL) {
+				printf("Exception %s sending auth response\n", exception->type->type_str);
+				dotnet_exception_destroy(exception);
 			} else {
 				printf("External auth didn't raise an error\n");
 			}
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		u8 role = 1, isauthenticated = 0;
 		if (idprimenet_op_mscm_isauthenticated(card, &exception, role, &isauthenticated)) {
 			printf("Failure querying auth status\n");
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s querying auth status\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s querying auth status\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("Is role %d authenticated? %d\n", role, isauthenticated);
 		}
 	}
 	{
+		dotnet_exception_t *exception = NULL;
 		char *path = "";
 		struct idprimenet_string_array *results = NULL;
 		if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
@@ -1768,9 +1840,10 @@ static int idprimenet_match_card(struct sc_card *card)
 			idprimenet_string_array_destroy(results);
 			return 0;
 		}
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s querying files for '%s'\n", exception->type_str, path);
+		if (exception != NULL) {
+			printf("Exception %s querying files for '%s'\n", exception->type->type_str, path);
 			idprimenet_string_array_destroy(results);
+			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
 			printf("Files on card:\n");
@@ -1781,8 +1854,9 @@ static int idprimenet_match_card(struct sc_card *card)
 					printf("Failure reading '%s'\n", elem->value);
 					return 0;
 				}
-				if (exception->type != IDPRIME_TYPE_NONE) {
-					printf("Exception %s reading '%s'\n", exception->type_str, elem->value);
+				if (exception != NULL) {
+					printf("Exception %s reading '%s'\n", exception->type->type_str, elem->value);
+					dotnet_exception_destroy(exception);
 					return 0;
 				} else {
 					printf(" - %s (%ld bytes)\n", elem->value, buf_len);
@@ -1802,16 +1876,18 @@ int idprimenet_select_file(sc_card_t *card, const sc_path_t *path, sc_file_t **f
 
 int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
 	char *path = "";
-	const idprimenet_type_hivecode_t *exception;
+	dotnet_exception_t *exception = NULL;
 	struct idprimenet_string_array *results = NULL;
+
 	if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
 		printf("Failure querying files for '%s'\n", path);
 		idprimenet_string_array_destroy(results);
 		return 0;
 	}
-	if (exception->type != IDPRIME_TYPE_NONE) {
-		printf("Exception %s querying files for '%s'\n", exception->type_str, path);
+	if (exception != NULL) {
+		DOTNET_PRINT_EXCEPTION("Exception querying files", exception);
 		idprimenet_string_array_destroy(results);
+		dotnet_exception_destroy(exception);
 		return 0;
 	} else {
 			printf("Files on card:\n");
@@ -1827,14 +1903,15 @@ static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number
 	u8 serialnumber[255];
 	size_t serialnumber_len = 255;
 	struct sc_context *ctx = card->ctx;
-	const idprimenet_type_hivecode_t *exception;
+	dotnet_exception_t *exception = NULL;
 
 	LOG_FUNC_CALLED(ctx);
 	if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
 		printf("Failure retrieving serial number\n");
 	} else {
-		if (exception->type != IDPRIME_TYPE_NONE) {
-			printf("Exception %s retrieving serial number\n", exception->type_str);
+		if (exception != NULL) {
+			printf("Exception %s retrieving serial number\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
 		} else {
 			memcpy(serial->value, serialnumber, serialnumber_len);
 			serial->len = serialnumber_len;
@@ -1849,6 +1926,28 @@ static int idprimenet_init(struct sc_card *card)
 
 	card->name = "Gemalto IDPrime.NET card";
 	card->drv_data = NULL;
+
+	{
+		idprimenet_key_sizes_t keysizes = {0, 0, 0, 0};
+		dotnet_exception_t *exception = NULL;
+
+		if (idprimenet_op_mscm_querykeysizes(card, &exception, &keysizes)) {
+			sc_log(card->ctx, "Failure retrieving keysizes\n");
+			return 0;
+		}
+		if (exception != NULL) {
+			printf("Exception %s retrieving keysizes\n", exception->type->type_str);
+			dotnet_exception_destroy(exception);
+			return 0;
+		} else {
+			printf("Key sizes: min: %d, default: %d, max: %d, incremental: %d\n",
+				keysizes.minimumBitLen,
+				keysizes.defaultBitLen,
+				keysizes.maximumBitLen,
+				keysizes.incrementalBitLen
+			);
+		}
+	}
 
 	LOG_FUNC_RETURN(card->ctx, SC_SUCCESS);
 }
