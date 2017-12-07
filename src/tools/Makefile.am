@@ -34,7 +34,7 @@ bin_PROGRAMS = opensc-tool opensc-explorer opensc-notify \
 	cardos-tool eidenv openpgp-tool iasecc-tool egk-tool opensc-asn1
 if ENABLE_OPENSSL
 bin_PROGRAMS += cryptoflex-tool pkcs15-init netkey-tool piv-tool \
-	westcos-tool sc-hsm-tool dnie-tool gids-tool npa-tool
+	westcos-tool sc-hsm-tool dnie-tool gids-tool npa-tool dotnet-tool
 endif
 
 if ENABLE_MAN
@@ -68,6 +68,8 @@ pkcs15_crypt_SOURCES = pkcs15-crypt.c util.c
 pkcs15_crypt_LDADD = $(OPTIONAL_OPENSSL_LIBS)
 cryptoflex_tool_SOURCES = cryptoflex-tool.c util.c
 cryptoflex_tool_LDADD = $(OPTIONAL_OPENSSL_LIBS)
+dotnet_tool_SOURCES = dotnet-tool.c util.c
+dotnet_tool_LDADD = $(OPTIONAL_OPENSSL_LIBS)
 pkcs15_init_SOURCES = pkcs15-init.c util.c
 pkcs15_init_LDADD = $(OPTIONAL_OPENSSL_LIBS)
 cardos_tool_SOURCES = cardos-tool.c util.c
@@ -200,6 +202,7 @@ pkcs15_crypt_SOURCES += versioninfo-tools.rc
 cryptoflex_tool_SOURCES += versioninfo-tools.rc
 pkcs15_init_SOURCES += versioninfo-tools.rc
 cardos_tool_SOURCES += versioninfo-tools.rc
+dotnet_tool_SOURCES += versioninfo-tools.rc
 eidenv_SOURCES += versioninfo-tools.rc
 netkey_tool_SOURCES += versioninfo-tools.rc
 westcos_tool_SOURCES += versioninfo-tools.rc

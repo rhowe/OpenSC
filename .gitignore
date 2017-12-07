@@ -57,10 +57,12 @@ tags
 *.obj
 *.exp
 *.res
+*.swp
 ChangeLog
 
 doc/tools/cardos-tool
 doc/tools/cryptoflex-tool
+doc/tools/dotnet-tool
 doc/tools/eidenv
 doc/tools/iasecc-tool
 doc/tools/netkey-tool
@@ -82,6 +84,7 @@ etc/opensc.conf
 src/common/compat_getopt_main
 src/minidriver/opensc-minidriver.inf
 src/tools/cardos-tool
+src/tools/dotnet-tool
 src/tools/iasecc-tool
 src/tools/openpgp-tool
 src/tools/sc-hsm-tool
