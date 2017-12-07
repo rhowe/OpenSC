@@ -1879,11 +1879,6 @@ static int idprimenet_match_card(struct sc_card *card)
 	return 1;
 }
 
-/* TODO: Figure out wtf I'm supposed to do here */
-int idprimenet_select_file(sc_card_t *card, const sc_path_t *path, sc_file_t **file) {
-	return SC_SUCCESS;
-}
-
 int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
 	char *path = "";
 	dotnet_exception_t *exception = NULL;
@@ -1908,6 +1903,16 @@ int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
 	}
 	return 0;
 }
+
+/* TODO: Figure out wtf I'm supposed to do here */
+int idprimenet_select_file(sc_card_t *card, const sc_path_t *path, sc_file_t **file) {
+	struct sc_context *ctx = card->ctx;
+
+	LOG_FUNC_CALLED(ctx);
+
+	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
+}
+
 static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number *serial)
 {
 	u8 serialnumber[255];
@@ -1916,7 +1921,9 @@ static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number
 	dotnet_exception_t *exception = NULL;
 
 	LOG_FUNC_CALLED(ctx);
-	if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
+	/* There are several ways to retrieve this */
+	//if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
+	if (idprimenet_op_mscm_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
 		printf("Failure retrieving serial number\n");
 	} else {
 		if (exception != NULL) {
