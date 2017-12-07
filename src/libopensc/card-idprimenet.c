@@ -38,6 +38,16 @@
 #include "cardctl.h"
 #include "internal.h"
 
+/* TODO: These are just a guess at this point */
+#define IDPRIMENET_CARD_DEFAULT_FLAGS ( 0        \
+      | SC_ALGORITHM_ONBOARD_KEY_GEN      \
+      | SC_ALGORITHM_RSA_PAD_ISO9796      \
+      | SC_ALGORITHM_RSA_PAD_PKCS1     \
+      | SC_ALGORITHM_RSA_HASH_NONE     \
+      | SC_ALGORITHM_RSA_HASH_SHA1     \
+      | SC_ALGORITHM_RSA_HASH_SHA256)
+
+
 typedef enum {
 	IDPRIME_TYPE_NONE,
 	IDPRIME_TYPE_SYSTEM_VOID,
@@ -1597,10 +1607,10 @@ error:
 }
 
 typedef struct {
-	int minimumBitLen;
-	int defaultBitLen;
-	int maximumBitLen;
-	int incrementalBitLen;
+	unsigned int minimumBitLen;
+	unsigned int defaultBitLen;
+	unsigned int maximumBitLen;
+	unsigned int incrementalBitLen;
 } idprimenet_key_sizes_t;
 
 static int idprimenet_op_mscm_querykeysizes(
@@ -1940,12 +1950,10 @@ static int idprimenet_init(struct sc_card *card)
 			dotnet_exception_destroy(exception);
 			return 0;
 		} else {
-			printf("Key sizes: min: %d, default: %d, max: %d, incremental: %d\n",
-				keysizes.minimumBitLen,
-				keysizes.defaultBitLen,
-				keysizes.maximumBitLen,
-				keysizes.incrementalBitLen
-			);
+			for (unsigned int keysize = keysizes.minimumBitLen;
+			     keysize <= keysizes.maximumBitLen;
+			     keysize += keysizes.incrementalBitLen)
+				_sc_card_add_rsa_alg(card, keysize, IDPRIMENET_CARD_DEFAULT_FLAGS,/* exponent - TODO: understand */ 0);
 		}
 	}
 
