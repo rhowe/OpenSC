@@ -428,13 +428,8 @@ static int idprimenet_apdu_to_string(const u8 *data, size_t data_len, char *dest
 	return 0;
 }
 
-struct idprimenet_string_array {
-	char *value;
-	struct idprimenet_string_array *next;
-};
-
-static struct idprimenet_string_array *idprimenet_string_array_new() {
-	struct idprimenet_string_array *elem = malloc(sizeof(struct idprimenet_string_array));
+idprimenet_string_array_t *idprimenet_string_array_new() {
+	idprimenet_string_array_t *elem = malloc(sizeof(idprimenet_string_array_t));
 	if (elem != NULL) {
 		elem->value = NULL;
 		elem->next = NULL;
@@ -442,7 +437,7 @@ static struct idprimenet_string_array *idprimenet_string_array_new() {
 	return elem;
 }
 
-static void idprimenet_string_array_destroy(struct idprimenet_string_array *list) {
+void idprimenet_string_array_destroy(idprimenet_string_array_t *list) {
 	while (list != NULL) {
 		if (list->value != NULL) { free(list->value); }
 		list = list->next;
@@ -452,10 +447,10 @@ static void idprimenet_string_array_destroy(struct idprimenet_string_array *list
 static int idprimenet_apdu_to_string_array(
 		const u8 *data,
 		size_t data_len,
-		struct idprimenet_string_array **dest) {
+		idprimenet_string_array_t **dest) {
 	unsigned int array_len; // TODO: 4 bytes?
 	const unsigned short header_len = 4;
-	struct idprimenet_string_array **current = dest;
+	idprimenet_string_array_t **current = dest;
 	if (data_len < header_len) {
 		printf("Malformed data - too small for a string array\n");
 		return -1;
@@ -470,7 +465,7 @@ static int idprimenet_apdu_to_string_array(
 	data_len -= 4;
 
 	for (unsigned int i = 0; i < array_len; i++) {
-		struct idprimenet_string_array *elem = idprimenet_string_array_new();
+		idprimenet_string_array_t *elem = idprimenet_string_array_new();
 		size_t buf_len = 255; // FIXME: Fixed buffer :(
 		elem->value = malloc(buf_len);
 		if (idprimenet_apdu_to_string(data, data_len, elem->value, &buf_len)) {
@@ -1013,7 +1008,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_contentmanager_getserialnumber(
+int idprimenet_op_contentmanager_getserialnumber(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		u8 *serialnumber,
@@ -1065,7 +1060,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_getserialnumber(
+int idprimenet_op_mscm_getserialnumber(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		u8 *serialnumber,
@@ -1117,7 +1112,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_externalauthenticate(
+int idprimenet_op_mscm_externalauthenticate(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		u8 *authresp,
@@ -1167,7 +1162,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_isauthenticated (
+int idprimenet_op_mscm_isauthenticated (
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		u8 role,
@@ -1220,7 +1215,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_forcegarbagecollector(
+int idprimenet_op_mscm_forcegarbagecollector(
 		struct sc_card *card,
 		dotnet_exception_t **exception) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
@@ -1304,12 +1299,11 @@ error:
 	return -1;
 }
 
-// TODO: Return the data somehow
-static int idprimenet_op_mscm_getfiles(
+int idprimenet_op_mscm_getfiles(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		char *path,
-		struct idprimenet_string_array **dest) {
+		idprimenet_string_array_t **dest) {
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
@@ -1358,7 +1352,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_readfile(
+int idprimenet_op_mscm_readfile(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		char *path,
@@ -1424,7 +1418,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_maxpinretrycounter(
+int idprimenet_op_mscm_maxpinretrycounter(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		u8 *maxpinretrycounter) {
@@ -1472,7 +1466,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_queryfreespace(
+int idprimenet_op_mscm_queryfreespace(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		int *freespace,
@@ -1533,14 +1527,7 @@ error:
 	return 1;
 }
 
-typedef struct {
-	unsigned int minimumBitLen;
-	unsigned int defaultBitLen;
-	unsigned int maximumBitLen;
-	unsigned int incrementalBitLen;
-} idprimenet_key_sizes_t;
-
-static int idprimenet_op_mscm_querykeysizes(
+int idprimenet_op_mscm_querykeysizes(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		idprimenet_key_sizes_t *key_sizes) {
@@ -1597,184 +1584,19 @@ static int idprimenet_match_card(struct sc_card *card)
 {
 	int i;
 
+	LOG_FUNC_CALLED(card->ctx);
+
 	i = _sc_match_atr(card, idprimenet_atrs, &card->type);
 	if (i < 0) return 0;
 
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 serialnumber[255];
-		size_t serialnumber_len = 255;
-		if (idprimenet_op_mscm_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
-			printf("Failure retrieving serial number\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s retrieving serial number\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("Serial number: 0x");
-			for (unsigned int i = 0; i < serialnumber_len; i++)
-				printf("%02x", serialnumber[i]);
-			printf("\n");
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		int freespace[255];
-		size_t freespace_len = 255;
-		if (idprimenet_op_mscm_queryfreespace(card, &exception, freespace, &freespace_len)) {
-			printf("Failure retrieving freespace\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s retrieving freespace\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("Freespace: 0x");
-			for (unsigned int i = 0; i < freespace_len; i++)
-				printf("%04x", freespace[i]);
-			printf("\n");
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		idprimenet_key_sizes_t keysizes = {0, 0, 0, 0};
-		if (idprimenet_op_mscm_querykeysizes(card, &exception, &keysizes)) {
-			printf("Failure retrieving keysizes\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s retrieving keysizes\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("Key sizes: min: %d, default: %d, max: %d, incremental: %d\n",
-				keysizes.minimumBitLen,
-				keysizes.defaultBitLen,
-				keysizes.maximumBitLen,
-				keysizes.incrementalBitLen
-			);
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 maxpinretrycounter = 0;
-		if (idprimenet_op_mscm_maxpinretrycounter(card, &exception, &maxpinretrycounter)) {
-			printf("Failure retrieving max pin retry counter\n");
-		} else {
-			if (exception != NULL) {
-				DOTNET_PRINT_EXCEPTION("Exception retrieving max pin retry counter", exception);
-				dotnet_exception_destroy(exception);
-			} else {
-				printf("Max pin retry counter: 0x%02x\n", maxpinretrycounter);
-			}
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		if (idprimenet_op_mscm_forcegarbagecollector(card, &exception)) {
-			printf("Failure forcing GC\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s forcing GC\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("GC forced\n");
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 serialnumber[255];
-		size_t serialnumber_len = 255;
-		if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
-			printf("Failure retrieving serial number\n");
-		} else {
-			if (exception != NULL) {
-				printf("Exception %s retrieving serial number\n", exception->type->type_str);
-				dotnet_exception_destroy(exception);
-			} else {
-				printf("Serial number: 0x");
-				for (unsigned int i = 0; i < serialnumber_len; i++)
-					printf("%02x", serialnumber[i]);
-				printf("\n");
-			}
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 authresp[1] = { 0 };
-		if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, sizeof(authresp))) {
-			printf("Failure sending auth response\n");
-		} else {
-			if (exception != NULL) {
-				printf("Exception %s sending auth response\n", exception->type->type_str);
-				dotnet_exception_destroy(exception);
-			} else {
-				printf("External auth didn't raise an error\n");
-			}
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 role = 1, isauthenticated = 0;
-		if (idprimenet_op_mscm_isauthenticated(card, &exception, role, &isauthenticated)) {
-			printf("Failure querying auth status\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s querying auth status\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("Is role %d authenticated? %d\n", role, isauthenticated);
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		char *path = "";
-		struct idprimenet_string_array *results = NULL;
-		if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
-			printf("Failure querying files for '%s'\n", path);
-			idprimenet_string_array_destroy(results);
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s querying files for '%s'\n", exception->type->type_str, path);
-			idprimenet_string_array_destroy(results);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("Files on card:\n");
-			for (struct idprimenet_string_array *elem = results; elem != NULL; elem = elem->next) {
-				size_t buf_len = 16384;
-				u8 buf[buf_len];
-				if (idprimenet_op_mscm_readfile(card, &exception, elem->value, buf, &buf_len)) {
-					printf("Failure reading '%s'\n", elem->value);
-					return 0;
-				}
-				if (exception != NULL) {
-					printf("Exception %s reading '%s'\n", exception->type->type_str, elem->value);
-					dotnet_exception_destroy(exception);
-					return 0;
-				} else {
-					printf(" - %s (%ld bytes)\n", elem->value, buf_len);
-				}
-			}
-			idprimenet_string_array_destroy(results);
-		}
-	}
 
-	return 1;
+	LOG_FUNC_RETURN(card->ctx, 1);
 }
 
 int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
 	char *path = "";
 	dotnet_exception_t *exception = NULL;
-	struct idprimenet_string_array *results = NULL;
+	idprimenet_string_array_t *results = NULL;
 
 	if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
 		printf("Failure querying files for '%s'\n", path);
@@ -1788,7 +1610,7 @@ int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
 		return 0;
 	} else {
 			printf("Files on card:\n");
-		for (struct idprimenet_string_array *elem = results; elem != NULL; elem = elem->next) {
+		for (idprimenet_string_array_t *elem = results; elem != NULL; elem = elem->next) {
 			printf(" - %s\n", elem->value);
 		}
 		idprimenet_string_array_destroy(results);

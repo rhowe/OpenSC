@@ -105,6 +105,40 @@ dotnet_exception_t *dotnet_exception_new();
 void dotnet_exception_destroy(dotnet_exception_t *exception);
 dotnet_exception_t *dotnet_exception_clone(dotnet_exception_t *src);
 
+typedef struct idprimenet_string_array {
+	char *value;
+	struct idprimenet_string_array *next;
+} idprimenet_string_array_t;
+
+idprimenet_string_array_t *idprimenet_string_array_new();
+void idprimenet_string_array_destroy(idprimenet_string_array_t *list);
+
+typedef struct {
+	unsigned int minimumBitLen;
+	unsigned int defaultBitLen;
+	unsigned int maximumBitLen;
+	unsigned int incrementalBitLen;
+} idprimenet_key_sizes_t;
+
+/* System.Byte[] SmartCard.ContentManager.get_SerialNumber() */
+int idprimenet_op_contentmanager_getserialnumber(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		u8 *serialnumber,
+		size_t *serialnumber_len);
+
+/* System.Void CardModuleService.ExternalAuthenticate(System.Byte[]) */
+int idprimenet_op_mscm_externalauthenticate(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		u8 *authresp,
+		size_t authresp_len);
+
+/* System.Void CardModuleService.ForceGarbageCollector() */
+int idprimenet_op_mscm_forcegarbagecollector(
+		struct sc_card *card,
+		dotnet_exception_t **exception);
+
 /* System.String CardModuleService.get_Version() */
 int idprimenet_op_mscm_getversion(
 		struct sc_card *card,
@@ -118,6 +152,54 @@ int idprimenet_op_mscm_getchallenge(
 		dotnet_exception_t **exception,
 		u8 *challenge,
 		size_t *challenge_len);
+
+/* System.String[] CardModuleService.GetFiles(System.String) */
+int idprimenet_op_mscm_getfiles(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		char *path,
+		idprimenet_string_array_t **dest);
+
+/* System.Byte[] CardModuleService.get_SerialNumber() */
+int idprimenet_op_mscm_getserialnumber(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		u8 *serialnumber,
+		size_t *serialnumber_len);
+
+/* System.Boolean CardModuleService.IsAuthenticated(System.Byte) */
+int idprimenet_op_mscm_isauthenticated (
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		u8 role,
+		u8 *answer);
+
+/* System.Byte CardModuleService.MaxPinRetryCounter() */
+int idprimenet_op_mscm_maxpinretrycounter(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		u8 *maxpinretrycounter);
+
+/* System.Int32[] CardModuleService.QueryFreeSpace() */
+int idprimenet_op_mscm_queryfreespace(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		int *freespace,
+		size_t *freespace_len);
+
+/* System.Int32[] CardModuleService.QueryKeySizes() */
+int idprimenet_op_mscm_querykeysizes(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		idprimenet_key_sizes_t *key_sizes);
+
+/* System.Byte[] CardModuleService.ReadFile(System.String,System.Int32) */
+int idprimenet_op_mscm_readfile(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		char *path,
+		u8 *data,
+		size_t *data_len);
 
 #ifdef __cplusplus
 }
