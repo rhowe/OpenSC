@@ -105,6 +105,13 @@ dotnet_exception_t *dotnet_exception_new();
 void dotnet_exception_destroy(dotnet_exception_t *exception);
 dotnet_exception_t *dotnet_exception_clone(dotnet_exception_t *src);
 
+/* System.String CardModuleService.get_Version() */
+int idprimenet_op_mscm_getversion(
+		struct sc_card *card,
+		dotnet_exception_t **exception,
+		char *version_str,
+		size_t *version_str_len);
+
 /* System.Byte[] CardModuleService.GetChallenge() */
 int idprimenet_op_mscm_getchallenge(
 		struct sc_card *card,

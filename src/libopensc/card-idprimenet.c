@@ -1260,7 +1260,7 @@ error:
 	return -1;
 }
 
-static int idprimenet_op_mscm_getversion(
+int idprimenet_op_mscm_getversion(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		char *version_str,
@@ -1600,22 +1600,6 @@ static int idprimenet_match_card(struct sc_card *card)
 	i = _sc_match_atr(card, idprimenet_atrs, &card->type);
 	if (i < 0) return 0;
 
-	{
-		dotnet_exception_t *exception = NULL;
-		char version[255];
-		size_t version_len = 255;
-		if (idprimenet_op_mscm_getversion(card, &exception, version, &version_len)) {
-			printf("Failure retrieving version\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s retrieving version\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("Card version (%ld chars) %s\n", version_len, version);
-		}
-	}
 	{
 		dotnet_exception_t *exception = NULL;
 		u8 serialnumber[255];

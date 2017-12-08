@@ -45,26 +45,31 @@ static int actions = 0;
 static char *opt_reader = NULL;
 static int opt_wait = 0;
 static int verbose = 0;
+static int opt_get_card_version = 0;
 static int opt_get_challenge = 0;
 
 static const char *app_name = "dotnet-tool";
 
 enum {
-	OPT_GET_CHALLENGE = 0x100,
+	OPT_BASE = 0x100,
+	OPT_GET_CARD_VERSION,
+	OPT_GET_CHALLENGE,
 };
 
 static const struct option options[] = {
-	{ "reader",        required_argument, NULL, 'r'               },
-	{ "get-challenge", no_argument,       NULL, OPT_GET_CHALLENGE },
-	{ "wait",          no_argument,       NULL, 'w'               },
-	{ "help",          no_argument,       NULL, 'h'               },
-	{ "verbose",       no_argument,       NULL, 'v'               },
-	{ "version",       no_argument,       NULL, 'V'               },
+	{ "reader",           required_argument, NULL, 'r'                  },
+	{ "get-card-version", no_argument,       NULL, OPT_GET_CARD_VERSION },
+	{ "get-challenge",    no_argument,       NULL, OPT_GET_CHALLENGE    },
+	{ "wait",             no_argument,       NULL, 'w'                  },
+	{ "help",             no_argument,       NULL, 'h'                  },
+	{ "verbose",          no_argument,       NULL, 'v'                  },
+	{ "version",          no_argument,       NULL, 'V'                  },
 	{ NULL, 0, NULL, 0 }
 };
 
 static const char *option_help[] = {
 /* r */	"Use reader number <arg> [0]",
+/*   */	"Get card version number",
 /*   */	"Get challenge from card",
 /* w */	"Wait for card insertion",
 /* h */	"Print this help message",
@@ -103,6 +108,24 @@ static int get_challenge(struct sc_card *card) {
 	return -1;
 }
 
+static int get_card_version(struct sc_card *card) {
+	dotnet_exception_t *exception = NULL;
+	char version[255];
+	size_t version_len = 255;
+	if (idprimenet_op_mscm_getversion(card, &exception, version, &version_len)) {
+		printf("Failure retrieving version\n");
+		return 0;
+	}
+	if (exception != NULL) {
+		printf("Exception %s retrieving version\n", exception->type->type_str);
+		dotnet_exception_destroy(exception);
+		return 0;
+	} else {
+		printf("Card version: %s\n", version);
+	}
+	return -1;
+}
+
 
 static int decode_options(int argc, char **argv)
 {
@@ -118,6 +141,9 @@ static int decode_options(int argc, char **argv)
 			break;
 		case 'w':
 			opt_wait = 1;
+			break;
+		case OPT_GET_CARD_VERSION:
+			opt_get_card_version = 1;
 			break;
 		case OPT_GET_CHALLENGE:
 			opt_get_challenge = 1;
@@ -179,6 +205,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Card type %X\n", card->type);
 		exit_status = EXIT_FAILURE;
 		goto out;
+	}
+
+	if (opt_get_card_version) {
+		actions++;
+		exit_status |= get_card_version(card);
 	}
 
 	if (opt_get_challenge) {

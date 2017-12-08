@@ -337,6 +337,7 @@ sc_sm_single_transmit
 sc_sm_stop
 dotnet_exception_destroy
 idprimenet_op_mscm_getchallenge
+idprimenet_op_mscm_getversion
 iasecc_sm_create_file
 iasecc_sm_delete_file
 iasecc_sm_external_authentication
