@@ -335,6 +335,8 @@ sc_sm_parse_answer
 sc_sm_update_apdu_response
 sc_sm_single_transmit
 sc_sm_stop
+dotnet_exception_destroy
+idprimenet_op_mscm_getchallenge
 iasecc_sm_create_file
 iasecc_sm_delete_file
 iasecc_sm_external_authentication

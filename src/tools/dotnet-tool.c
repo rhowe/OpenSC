@@ -1,5 +1,5 @@
 /*
- * dotnet-tool.c: OpenPGP card utility
+ * dotnet-tool.c: IDPrime.NET card utility
  *
  * Copyright (C) 2017 Russell Howe <rhowe.opensc@siksai.co.uk>
  *
@@ -34,6 +34,8 @@
 #include "util.h"
 #include "libopensc/log.h"
 
+#include "libopensc/card-idprimenet.h"
+
 /* declare functions */
 static void show_version(void);
 static int decode_options(int argc, char **argv);
@@ -43,20 +45,27 @@ static int actions = 0;
 static char *opt_reader = NULL;
 static int opt_wait = 0;
 static int verbose = 0;
+static int opt_get_challenge = 0;
 
 static const char *app_name = "dotnet-tool";
 
+enum {
+	OPT_GET_CHALLENGE = 0x100,
+};
+
 static const struct option options[] = {
-	{ "reader",    required_argument, NULL, 'r'        },
-	{ "wait",      no_argument,       NULL, 'w'        },
-	{ "help",      no_argument,       NULL, 'h'        },
-	{ "verbose",   no_argument,       NULL, 'v'        },
-	{ "version",   no_argument,       NULL, 'V'        },
+	{ "reader",        required_argument, NULL, 'r'               },
+	{ "get-challenge", no_argument,       NULL, OPT_GET_CHALLENGE },
+	{ "wait",          no_argument,       NULL, 'w'               },
+	{ "help",          no_argument,       NULL, 'h'               },
+	{ "verbose",       no_argument,       NULL, 'v'               },
+	{ "version",       no_argument,       NULL, 'V'               },
 	{ NULL, 0, NULL, 0 }
 };
 
 static const char *option_help[] = {
 /* r */	"Use reader number <arg> [0]",
+/*   */	"Get challenge from card",
 /* w */	"Wait for card insertion",
 /* h */	"Print this help message",
 /* v */	"Verbose operation. Use several times to enable debug output.",
@@ -71,6 +80,27 @@ static void show_version(void)
 		"\n"
 		"Copyright (c) 2017 Russell Howe <rhowe.opensc@siksai.co.uk>\n"
 		"Licensed under LGPL v2\n");
+}
+
+static int get_challenge(struct sc_card *card) {
+	dotnet_exception_t *exception = NULL;
+	u8 challenge[255];
+	size_t challenge_len = 255;
+	if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
+		printf("Failure retrieving challenge\n");
+		return 0;
+	}
+	if (exception != NULL) {
+		printf("Exception %s retrieving challenge\n", exception->type->type_str);
+		dotnet_exception_destroy(exception);
+		return 0;
+	} else {
+		printf("Challenge: 0x");
+		for (unsigned int i = 0; i < challenge_len; i++)
+			printf("%02x", challenge[i]);
+		printf("\n");
+	}
+	return -1;
 }
 
 
@@ -88,6 +118,9 @@ static int decode_options(int argc, char **argv)
 			break;
 		case 'w':
 			opt_wait = 1;
+			break;
+		case OPT_GET_CHALLENGE:
+			opt_get_challenge = 1;
 			break;
 		case 'v':
 			verbose++;
@@ -146,6 +179,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Card type %X\n", card->type);
 		exit_status = EXIT_FAILURE;
 		goto out;
+	}
+
+	if (opt_get_challenge) {
+		actions++;
+		exit_status |= get_challenge(card);
 	}
 
 	/* fail on too many arguments */

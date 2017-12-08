@@ -37,6 +37,7 @@
 
 #include "cardctl.h"
 #include "internal.h"
+#include "card-idprimenet.h"
 
 /* TODO: These are just a guess at this point */
 #define IDPRIMENET_CARD_DEFAULT_FLAGS ( 0        \
@@ -47,75 +48,6 @@
       | SC_ALGORITHM_RSA_HASH_SHA1     \
       | SC_ALGORITHM_RSA_HASH_SHA256)
 
-
-typedef enum {
-	IDPRIME_TYPE_NONE,
-	IDPRIME_TYPE_SYSTEM_VOID,
-	IDPRIME_TYPE_SYSTEM_INT32,
-	IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
-	IDPRIME_TYPE_SYSTEM_BOOLEAN,
-	IDPRIME_TYPE_SYSTEM_BOOLEAN_ARRAY,
-	IDPRIME_TYPE_SYSTEM_SBYTE,
-	IDPRIME_TYPE_SYSTEM_SBYTE_ARRAY,
-	IDPRIME_TYPE_SYSTEM_UINT16,
-	IDPRIME_TYPE_SYSTEM_UINT16_ARRAY,
-	IDPRIME_TYPE_SYSTEM_UINT32,
-	IDPRIME_TYPE_SYSTEM_UINT32_ARRAY,
-	IDPRIME_TYPE_SYSTEM_BYTE,
-	IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
-	IDPRIME_TYPE_SYSTEM_CHAR,
-	IDPRIME_TYPE_SYSTEM_CHAR_ARRAY,
-	IDPRIME_TYPE_SYSTEM_INT16,
-	IDPRIME_TYPE_SYSTEM_INT16_ARRAY,
-	IDPRIME_TYPE_SYSTEM_STRING,
-	IDPRIME_TYPE_SYSTEM_STRING_ARRAY,
-	IDPRIME_TYPE_SYSTEM_INT64,
-	IDPRIME_TYPE_SYSTEM_INT64_ARRAY,
-	IDPRIME_TYPE_SYSTEM_UINT64,
-	IDPRIME_TYPE_SYSTEM_UINT64_ARRAY,
-	IDPRIME_TYPE_SYSTEM_IO_MEMORYSTREAM,
-	IDPRIME_TYPE_SMARTCARD_CONTENTMANAGER,
-	/* Exception types */
-	IDPRIME_EX_TYPE_SYSTEM_EXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_SYSTEMEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_OUTOFMEMORYEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_ARGUMENTEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_ARGUMENTNULLEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_NULLREFERENCEEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_ARGUMENTOUTOFRANGEEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_NOTSUPPORTEDEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_INVALIDCASTEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_INVALIDOPERATIONEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_NOTIMPLEMENTEDEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_OBJECTDISPOSEDEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_UNAUTHORIZEDACCESSEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_INDEXOUTOFRANGEEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_FORMATEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_ARITHMETICEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_OVERFLOWEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_BADIMAGEFORMATEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_APPLICATIONEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_ARRAYTYPEMISMATCHEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_DIVIDEBYZEROEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_MEMBERACCESSEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_MISSINGMEMBEREXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_MISSINGFIELDEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_MISSINGMETHODEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_RANKEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_STACKOVERFLOWEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_TYPELOADEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_IO_IOEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_IO_DIRECTORYNOTFOUNDEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_IO_FILENOTFOUNDEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_RUNTIME_REMOTING_REMOTINGEXCEPTION,
-	IDPRIME_EX_TYPE_SYSTEM_SECURITY_CRYPTOGRAPHY_CRYPTOGRAPHICEXCEPTION
-} idprimenet_type_t;
-
-typedef struct {
-	idprimenet_type_t type;
-	char *type_str;
-	u8 hivecode[4];
-} idprimenet_type_hivecode_t;
 
 /* From page 109 of the IDPrime.NET integration guide */
 /* These could be calculated if we knew what the public key token
@@ -285,12 +217,7 @@ static const idprimenet_namespace_hivecode_t idprimenet_namespace_hivecodes[] = 
 	{IDPRIME_NS_NONE,                              NULL,                                {0,    0,    0,    0   }}
 };
 
-typedef struct {
-	const idprimenet_type_hivecode_t *type;
-	char *message;
-} dotnet_exception_t;
-
-static dotnet_exception_t *dotnet_exception_new() {
+dotnet_exception_t *dotnet_exception_new() {
 	dotnet_exception_t *res = malloc(sizeof(dotnet_exception_t));
 	if (res == NULL) return NULL;
 
@@ -300,12 +227,12 @@ static dotnet_exception_t *dotnet_exception_new() {
 	return res;
 }
 
-static void dotnet_exception_destroy(dotnet_exception_t *exception) {
+void dotnet_exception_destroy(dotnet_exception_t *exception) {
 	if (exception->message != NULL) free(exception->message);
 	free(exception);
 }
 
-static dotnet_exception_t *dotnet_exception_clone(dotnet_exception_t *src) {
+dotnet_exception_t *dotnet_exception_clone(dotnet_exception_t *src) {
 	dotnet_exception_t *res = malloc(sizeof(dotnet_exception_t));
 	if (res == NULL) return NULL;
 
@@ -1034,7 +961,7 @@ error:
 	return 0;
 }
 
-static int idprimenet_op_mscm_getchallenge(
+int idprimenet_op_mscm_getchallenge(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		u8 *challenge,
@@ -1745,25 +1672,6 @@ static int idprimenet_match_card(struct sc_card *card)
 				keysizes.maximumBitLen,
 				keysizes.incrementalBitLen
 			);
-		}
-	}
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 challenge[255];
-		size_t challenge_len = 255;
-		if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
-			printf("Failure retrieving challenge\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s retrieving challenge\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			printf("Challenge: 0x");
-			for (unsigned int i = 0; i < challenge_len; i++)
-				printf("%02x", challenge[i]);
-			printf("\n");
 		}
 	}
 	{
