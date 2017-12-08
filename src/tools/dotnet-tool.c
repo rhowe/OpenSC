@@ -48,8 +48,10 @@ static int verbose = 0;
 static int opt_force_gc = 0;
 static int opt_get_card_version = 0;
 static int opt_get_challenge = 0;
+static char *opt_get_files_path = NULL;
 static int opt_get_free_space = 0;
 static int opt_get_pin_retries = 0;
+static char *opt_read_file_path = NULL;
 
 static const char *app_name = "dotnet-tool";
 
@@ -58,8 +60,10 @@ enum {
 	OPT_FORCE_GC,
 	OPT_GET_CARD_VERSION,
 	OPT_GET_CHALLENGE,
+	OPT_GET_FILES,
 	OPT_GET_FREESPACE,
 	OPT_GET_PIN_RETRIES,
+	OPT_READ_FILE,
 };
 
 static const struct option options[] = {
@@ -67,8 +71,10 @@ static const struct option options[] = {
 	{ "force-gc",         no_argument,       NULL, OPT_FORCE_GC         },
 	{ "get-card-version", no_argument,       NULL, OPT_GET_CARD_VERSION },
 	{ "get-challenge",    no_argument,       NULL, OPT_GET_CHALLENGE    },
+	{ "get-files",        required_argument, NULL, OPT_GET_FILES        },
 	{ "get-free-space",   no_argument,       NULL, OPT_GET_FREESPACE    },
 	{ "get-pin-retries",  no_argument,       NULL, OPT_GET_PIN_RETRIES  },
+	{ "read-file",        required_argument, NULL, OPT_READ_FILE        },
 	{ "wait",             no_argument,       NULL, 'w'                  },
 	{ "help",             no_argument,       NULL, 'h'                  },
 	{ "verbose",          no_argument,       NULL, 'v'                  },
@@ -81,7 +87,10 @@ static const char *option_help[] = {
 /*   */	"Force garbage collection on the card",
 /*   */	"Get card version number",
 /*   */	"Get challenge from card",
+/*   */	"Get files for a given directory",
 /*   */	"Query the free space on the card",
+/*   */	"Query the PIN retry counter",
+/*   */	"Read a file on the card",
 /* w */	"Wait for card insertion",
 /* h */	"Print this help message",
 /* v */	"Verbose operation. Use several times to enable debug output.",
@@ -113,29 +122,26 @@ static void show_version(void)
 			}
 		}
 	}
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 role = 1, isauthenticated = 0;
 */
 static int get_challenge(struct sc_card *card) {
 	dotnet_exception_t *exception = NULL;
 	u8 challenge[255];
 	size_t challenge_len = 255;
 	if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
-		printf("Failure retrieving challenge\n");
-		return 0;
+		util_error("Failure retrieving challenge\n");
+		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		printf("Exception %s retrieving challenge\n", exception->type->type_str);
+		util_error("Exception %s retrieving challenge\n", exception->type->type_str);
 		dotnet_exception_destroy(exception);
-		return 0;
+		return EXIT_FAILURE;
 	} else {
 		printf("Challenge: 0x");
 		for (unsigned int i = 0; i < challenge_len; i++)
 			printf("%02x", challenge[i]);
 		printf("\n");
 	}
-	return -1;
+	return EXIT_SUCCESS;
 }
 
 static int get_card_version(struct sc_card *card) {
@@ -143,17 +149,53 @@ static int get_card_version(struct sc_card *card) {
 	char version[255];
 	size_t version_len = 255;
 	if (idprimenet_op_mscm_getversion(card, &exception, version, &version_len)) {
-		printf("Failure retrieving version\n");
-		return 0;
+		util_error("Failure retrieving version\n");
+		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		printf("Exception %s retrieving version\n", exception->type->type_str);
+		util_error("Exception %s retrieving version\n", exception->type->type_str);
 		dotnet_exception_destroy(exception);
-		return 0;
+		return EXIT_FAILURE;
 	} else {
 		printf("Card version: %s\n", version);
 	}
-	return -1;
+	return EXIT_SUCCESS;
+}
+
+static int get_files(struct sc_card *card, char *path) {
+	dotnet_exception_t *exception = NULL;
+	struct idprimenet_string_array *results = NULL;
+
+	if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
+		util_error("Failure querying files for '%s'\n", path);
+		idprimenet_string_array_destroy(results);
+		return EXIT_FAILURE;
+	}
+	if (exception != NULL) {
+		util_error("Exception %s querying files for '%s'\n", exception->type->type_str, path);
+		idprimenet_string_array_destroy(results);
+		dotnet_exception_destroy(exception);
+		return EXIT_FAILURE;
+	} else {
+		printf("Files on card in '%s':\n", path);
+		for (struct idprimenet_string_array *elem = results; elem != NULL; elem = elem->next) {
+			size_t buf_len = 16384;
+			u8 buf[buf_len];
+			if (idprimenet_op_mscm_readfile(card, &exception, elem->value, buf, &buf_len)) {
+				util_error("Failure reading '%s'\n", elem->value);
+				return EXIT_FAILURE;
+			}
+			if (exception != NULL) {
+				util_error("Exception %s reading '%s'\n", exception->type->type_str, elem->value);
+				dotnet_exception_destroy(exception);
+				return EXIT_FAILURE;
+			} else {
+				printf(" - %s (%ld bytes)\n", elem->value, buf_len);
+			}
+		}
+		idprimenet_string_array_destroy(results);
+		return EXIT_SUCCESS;
+	}
 }
 
 static int get_free_space(struct sc_card *card) {
@@ -161,35 +203,35 @@ static int get_free_space(struct sc_card *card) {
 	int freespace[255];
 	size_t freespace_len = 255;
 	if (idprimenet_op_mscm_queryfreespace(card, &exception, freespace, &freespace_len)) {
-		printf("Failure retrieving freespace\n");
-		return 0;
+		util_error("Failure retrieving freespace\n");
+		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		printf("Exception %s retrieving freespace\n", exception->type->type_str);
+		util_error("Exception %s retrieving freespace\n", exception->type->type_str);
 		dotnet_exception_destroy(exception);
-		return 0;
+		return EXIT_FAILURE;
 	} else {
 		printf("Freespace: 0x");
 		for (unsigned int i = 0; i < freespace_len; i++)
 			printf("%04x", freespace[i]);
 		printf("\n");
-		return -1;
+		return EXIT_SUCCESS;
 	}
 }
 static int get_max_pin_retry_counter(struct sc_card *card) {
 	dotnet_exception_t *exception = NULL;
 	u8 maxpinretrycounter = 0;
 	if (idprimenet_op_mscm_maxpinretrycounter(card, &exception, &maxpinretrycounter)) {
-		printf("Failure retrieving max pin retry counter\n");
-			return 0;
+		util_error("Failure retrieving max pin retry counter\n");
+			return EXIT_FAILURE;
 	} else {
 		if (exception != NULL) {
 			DOTNET_PRINT_EXCEPTION("Exception retrieving max pin retry counter", exception);
 			dotnet_exception_destroy(exception);
-			return 0;
+			return EXIT_FAILURE;
 		} else {
 			printf("Max pin retry counter: 0x%02x\n", maxpinretrycounter);
-			return -1;
+			return EXIT_SUCCESS;
 		}
 	}
 }
@@ -197,16 +239,42 @@ static int get_max_pin_retry_counter(struct sc_card *card) {
 static int force_gc(struct sc_card *card) {
 	dotnet_exception_t *exception = NULL;
 	if (idprimenet_op_mscm_forcegarbagecollector(card, &exception)) {
-		printf("Failure forcing GC\n");
-		return 0;
+		util_error("Failure forcing GC\n");
+		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		printf("Exception %s forcing GC\n", exception->type->type_str);
+		util_error("Exception %s forcing GC\n", exception->type->type_str);
 		dotnet_exception_destroy(exception);
-		return 0;
+		return EXIT_FAILURE;
 	} else {
 		printf("GC forced\n");
-		return -1;
+		return EXIT_SUCCESS;
+	}
+}
+
+static int read_file(struct sc_card *card, char *path) {
+	dotnet_exception_t *exception = NULL;
+	size_t buf_len = 16384;
+	u8 buf[buf_len];
+	if (idprimenet_op_mscm_readfile(card, &exception, path, buf, &buf_len)) {
+		util_error("Failure reading '%s'\n", path);
+		return EXIT_FAILURE;
+	}
+	if (exception != NULL) {
+		util_error("Exception %s reading '%s'\n", exception->type->type_str, path);
+		dotnet_exception_destroy(exception);
+		return EXIT_FAILURE;
+	} else {
+		size_t bytes_remaining = buf_len;
+		while (bytes_remaining > 0) {
+			ssize_t written = write(1, buf + (buf_len - bytes_remaining), bytes_remaining);
+			if (written == -1) {
+				perror("Reading file");
+			} else {
+				bytes_remaining -= written;
+			}
+		}
+		return EXIT_SUCCESS;
 	}
 }
 
@@ -234,11 +302,17 @@ static int decode_options(int argc, char **argv)
 		case OPT_GET_CHALLENGE:
 			opt_get_challenge = 1;
 			break;
+		case OPT_GET_FILES:
+			opt_get_files_path = optarg;
+			break;
 		case OPT_GET_FREESPACE:
 			opt_get_free_space = 1;
 			break;
 		case OPT_GET_PIN_RETRIES:
 			opt_get_pin_retries = 1;
+			break;
+		case OPT_READ_FILE:
+			opt_read_file_path = optarg;
 			break;
 		case 'v':
 			verbose++;
@@ -314,6 +388,11 @@ int main(int argc, char **argv)
 		exit_status |= get_challenge(card);
 	}
 
+	if (opt_get_files_path != NULL) {
+		actions++;
+		exit_status |= get_files(card, opt_get_files_path);
+	}
+
 	if (opt_get_free_space) {
 		actions++;
 		exit_status |= get_free_space(card);
@@ -322,6 +401,11 @@ int main(int argc, char **argv)
 	if (opt_get_pin_retries) {
 		actions++;
 		exit_status |= get_max_pin_retry_counter(card);
+	}
+
+	if (opt_read_file_path != NULL) {
+		actions++;
+		exit_status |= read_file(card, opt_read_file_path);
 	}
 
 	/* fail on too many arguments */
