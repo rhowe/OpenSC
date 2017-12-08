@@ -47,6 +47,7 @@ static int actions = 0;
 static char *opt_reader = NULL;
 static int opt_wait = 0;
 static int verbose = 0;
+static int opt_ext_auth = 0;
 static int opt_force_gc = 0;
 static int opt_get_card_version = 0;
 static int opt_get_challenge = 0;
@@ -59,6 +60,7 @@ static const char *app_name = "dotnet-tool";
 
 enum {
 	OPT_BASE = 0x100,
+	OPT_EXT_AUTH,
 	OPT_FORCE_GC,
 	OPT_GET_CARD_VERSION,
 	OPT_GET_CHALLENGE,
@@ -69,23 +71,25 @@ enum {
 };
 
 static const struct option options[] = {
-	{ "reader",           required_argument, NULL, 'r'                  },
-	{ "force-gc",         no_argument,       NULL, OPT_FORCE_GC         },
-	{ "get-card-version", no_argument,       NULL, OPT_GET_CARD_VERSION },
-	{ "get-challenge",    no_argument,       NULL, OPT_GET_CHALLENGE    },
-	{ "get-files",        required_argument, NULL, OPT_GET_FILES        },
-	{ "get-free-space",   no_argument,       NULL, OPT_GET_FREESPACE    },
-	{ "get-pin-retries",  no_argument,       NULL, OPT_GET_PIN_RETRIES  },
-	{ "read-file",        required_argument, NULL, OPT_READ_FILE        },
-	{ "wait",             no_argument,       NULL, 'w'                  },
-	{ "help",             no_argument,       NULL, 'h'                  },
-	{ "verbose",          no_argument,       NULL, 'v'                  },
-	{ "version",          no_argument,       NULL, 'V'                  },
+	{ "reader",                required_argument, NULL, 'r'                  },
+	{ "external-authenticate", no_argument,       NULL, OPT_EXT_AUTH         },
+	{ "force-gc",              no_argument,       NULL, OPT_FORCE_GC         },
+	{ "get-card-version",      no_argument,       NULL, OPT_GET_CARD_VERSION },
+	{ "get-challenge",         no_argument,       NULL, OPT_GET_CHALLENGE    },
+	{ "get-files",             required_argument, NULL, OPT_GET_FILES        },
+	{ "get-free-space",        no_argument,       NULL, OPT_GET_FREESPACE    },
+	{ "get-pin-retries",       no_argument,       NULL, OPT_GET_PIN_RETRIES  },
+	{ "read-file",             required_argument, NULL, OPT_READ_FILE        },
+	{ "wait",                  no_argument,       NULL, 'w'                  },
+	{ "help",                  no_argument,       NULL, 'h'                  },
+	{ "verbose",               no_argument,       NULL, 'v'                  },
+	{ "version",               no_argument,       NULL, 'V'                  },
 	{ NULL, 0, NULL, 0 }
 };
 
 static const char *option_help[] = {
 /* r */	"Use reader number <arg> [0]",
+/*   */	"External authentication",
 /*   */	"Force garbage collection on the card",
 /*   */	"Get card version number",
 /*   */	"Get challenge from card",
@@ -109,11 +113,22 @@ static void show_version(void)
 		"Licensed under LGPL v2\n");
 }
 
-/*
 static int external_authenticate(struct sc_card *card) {
 	dotnet_exception_t *exception = NULL;
-	u8 authresp[1] = { 0 };
-	if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, sizeof(authresp))) {
+	u8 authresp[255];
+	size_t authresp_len = 0;
+
+	authresp_len = fread(authresp, 1, 255, stdin);
+	if (ferror(stdin)) {
+		util_error("Error reading input\n");
+		return EXIT_FAILURE;
+	}
+	if (authresp_len == 255 || !feof(stdin)) {
+		util_error("Input too long\n");
+		return EXIT_FAILURE;
+	}
+
+	if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, authresp_len)) {
 		util_error("Failure sending auth response\n");
 		return EXIT_FAILURE;
 	}
@@ -122,10 +137,9 @@ static int external_authenticate(struct sc_card *card) {
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
-		printf("External auth didn't raise an error\n");
+		return EXIT_SUCCESS;
 	}
 }
-*/
 
 static int get_challenge(struct sc_card *card) {
 	dotnet_exception_t *exception = NULL;
@@ -140,9 +154,9 @@ static int get_challenge(struct sc_card *card) {
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
-		printf("Challenge: 0x");
+		printf("Challenge: ");
 		for (unsigned int i = 0; i < challenge_len; i++)
-			printf("%02x", challenge[i]);
+			printf("\\x%02x", challenge[i]);
 		printf("\n");
 	}
 	return EXIT_SUCCESS;
@@ -298,6 +312,9 @@ static int decode_options(int argc, char **argv)
 		case 'w':
 			opt_wait = 1;
 			break;
+		case OPT_EXT_AUTH:
+			opt_ext_auth = 1;
+			break;
 		case OPT_FORCE_GC:
 			opt_force_gc= 1;
 			break;
@@ -376,6 +393,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Card type %X\n", card->type);
 		exit_status = EXIT_FAILURE;
 		goto out;
+	}
+
+	if (opt_ext_auth) {
+		actions++;
+		exit_status |= external_authenticate(card);
 	}
 
 	if (opt_force_gc) {
