@@ -250,8 +250,6 @@ dotnet_exception_t *dotnet_exception_clone(dotnet_exception_t *src) {
 	return res;
 }
 
-#define DOTNET_PRINT_EXCEPTION(msg, exception) printf("%s: %s: %s\n", msg, exception->type->type_str, exception->message == NULL ? "(no message)" : exception->message)
-
 typedef struct {
 	dotnet_exception_t *exception;
 	const idprimenet_namespace_hivecode_t *namespace;

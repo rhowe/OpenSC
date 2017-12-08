@@ -105,6 +105,8 @@ dotnet_exception_t *dotnet_exception_new();
 void dotnet_exception_destroy(dotnet_exception_t *exception);
 dotnet_exception_t *dotnet_exception_clone(dotnet_exception_t *src);
 
+#define DOTNET_PRINT_EXCEPTION(msg, exception) printf("%s: %s: %s\n", msg, exception->type->type_str, exception->message == NULL ? "(no message)" : exception->message)
+
 typedef struct idprimenet_string_array {
 	char *value;
 	struct idprimenet_string_array *next;

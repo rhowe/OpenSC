@@ -45,21 +45,30 @@ static int actions = 0;
 static char *opt_reader = NULL;
 static int opt_wait = 0;
 static int verbose = 0;
+static int opt_force_gc = 0;
 static int opt_get_card_version = 0;
 static int opt_get_challenge = 0;
+static int opt_get_free_space = 0;
+static int opt_get_pin_retries = 0;
 
 static const char *app_name = "dotnet-tool";
 
 enum {
 	OPT_BASE = 0x100,
+	OPT_FORCE_GC,
 	OPT_GET_CARD_VERSION,
 	OPT_GET_CHALLENGE,
+	OPT_GET_FREESPACE,
+	OPT_GET_PIN_RETRIES,
 };
 
 static const struct option options[] = {
 	{ "reader",           required_argument, NULL, 'r'                  },
+	{ "force-gc",         no_argument,       NULL, OPT_FORCE_GC         },
 	{ "get-card-version", no_argument,       NULL, OPT_GET_CARD_VERSION },
 	{ "get-challenge",    no_argument,       NULL, OPT_GET_CHALLENGE    },
+	{ "get-free-space",   no_argument,       NULL, OPT_GET_FREESPACE    },
+	{ "get-pin-retries",  no_argument,       NULL, OPT_GET_PIN_RETRIES  },
 	{ "wait",             no_argument,       NULL, 'w'                  },
 	{ "help",             no_argument,       NULL, 'h'                  },
 	{ "verbose",          no_argument,       NULL, 'v'                  },
@@ -69,8 +78,10 @@ static const struct option options[] = {
 
 static const char *option_help[] = {
 /* r */	"Use reader number <arg> [0]",
+/*   */	"Force garbage collection on the card",
 /*   */	"Get card version number",
 /*   */	"Get challenge from card",
+/*   */	"Query the free space on the card",
 /* w */	"Wait for card insertion",
 /* h */	"Print this help message",
 /* v */	"Verbose operation. Use several times to enable debug output.",
@@ -87,6 +98,25 @@ static void show_version(void)
 		"Licensed under LGPL v2\n");
 }
 
+/*
+	{
+		dotnet_exception_t *exception = NULL;
+		u8 authresp[1] = { 0 };
+		if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, sizeof(authresp))) {
+			printf("Failure sending auth response\n");
+		} else {
+			if (exception != NULL) {
+				printf("Exception %s sending auth response\n", exception->type->type_str);
+				dotnet_exception_destroy(exception);
+			} else {
+				printf("External auth didn't raise an error\n");
+			}
+		}
+	}
+	{
+		dotnet_exception_t *exception = NULL;
+		u8 role = 1, isauthenticated = 0;
+*/
 static int get_challenge(struct sc_card *card) {
 	dotnet_exception_t *exception = NULL;
 	u8 challenge[255];
@@ -126,6 +156,59 @@ static int get_card_version(struct sc_card *card) {
 	return -1;
 }
 
+static int get_free_space(struct sc_card *card) {
+	dotnet_exception_t *exception = NULL;
+	int freespace[255];
+	size_t freespace_len = 255;
+	if (idprimenet_op_mscm_queryfreespace(card, &exception, freespace, &freespace_len)) {
+		printf("Failure retrieving freespace\n");
+		return 0;
+	}
+	if (exception != NULL) {
+		printf("Exception %s retrieving freespace\n", exception->type->type_str);
+		dotnet_exception_destroy(exception);
+		return 0;
+	} else {
+		printf("Freespace: 0x");
+		for (unsigned int i = 0; i < freespace_len; i++)
+			printf("%04x", freespace[i]);
+		printf("\n");
+		return -1;
+	}
+}
+static int get_max_pin_retry_counter(struct sc_card *card) {
+	dotnet_exception_t *exception = NULL;
+	u8 maxpinretrycounter = 0;
+	if (idprimenet_op_mscm_maxpinretrycounter(card, &exception, &maxpinretrycounter)) {
+		printf("Failure retrieving max pin retry counter\n");
+			return 0;
+	} else {
+		if (exception != NULL) {
+			DOTNET_PRINT_EXCEPTION("Exception retrieving max pin retry counter", exception);
+			dotnet_exception_destroy(exception);
+			return 0;
+		} else {
+			printf("Max pin retry counter: 0x%02x\n", maxpinretrycounter);
+			return -1;
+		}
+	}
+}
+
+static int force_gc(struct sc_card *card) {
+	dotnet_exception_t *exception = NULL;
+	if (idprimenet_op_mscm_forcegarbagecollector(card, &exception)) {
+		printf("Failure forcing GC\n");
+		return 0;
+	}
+	if (exception != NULL) {
+		printf("Exception %s forcing GC\n", exception->type->type_str);
+		dotnet_exception_destroy(exception);
+		return 0;
+	} else {
+		printf("GC forced\n");
+		return -1;
+	}
+}
 
 static int decode_options(int argc, char **argv)
 {
@@ -142,11 +225,20 @@ static int decode_options(int argc, char **argv)
 		case 'w':
 			opt_wait = 1;
 			break;
+		case OPT_FORCE_GC:
+			opt_force_gc= 1;
+			break;
 		case OPT_GET_CARD_VERSION:
 			opt_get_card_version = 1;
 			break;
 		case OPT_GET_CHALLENGE:
 			opt_get_challenge = 1;
+			break;
+		case OPT_GET_FREESPACE:
+			opt_get_free_space = 1;
+			break;
+		case OPT_GET_PIN_RETRIES:
+			opt_get_pin_retries = 1;
 			break;
 		case 'v':
 			verbose++;
@@ -207,6 +299,11 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
+	if (opt_force_gc) {
+		actions++;
+		exit_status |= force_gc(card);
+	}
+
 	if (opt_get_card_version) {
 		actions++;
 		exit_status |= get_card_version(card);
@@ -215,6 +312,16 @@ int main(int argc, char **argv)
 	if (opt_get_challenge) {
 		actions++;
 		exit_status |= get_challenge(card);
+	}
+
+	if (opt_get_free_space) {
+		actions++;
+		exit_status |= get_free_space(card);
+	}
+
+	if (opt_get_pin_retries) {
+		actions++;
+		exit_status |= get_max_pin_retry_counter(card);
 	}
 
 	/* fail on too many arguments */
