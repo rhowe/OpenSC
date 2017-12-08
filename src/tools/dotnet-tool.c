@@ -36,6 +36,8 @@
 
 #include "libopensc/card-idprimenet.h"
 
+#define DOTNET_TOOL_PRINT_EXCEPTION(msg, exception) util_error("%s: %s: %s\n", msg, exception->type->type_str, exception->message == NULL ? "(no message)" : exception->message)
+
 /* declare functions */
 static void show_version(void);
 static int decode_options(int argc, char **argv);
@@ -108,21 +110,23 @@ static void show_version(void)
 }
 
 /*
-	{
-		dotnet_exception_t *exception = NULL;
-		u8 authresp[1] = { 0 };
-		if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, sizeof(authresp))) {
-			printf("Failure sending auth response\n");
-		} else {
-			if (exception != NULL) {
-				printf("Exception %s sending auth response\n", exception->type->type_str);
-				dotnet_exception_destroy(exception);
-			} else {
-				printf("External auth didn't raise an error\n");
-			}
-		}
+static int external_authenticate(struct sc_card *card) {
+	dotnet_exception_t *exception = NULL;
+	u8 authresp[1] = { 0 };
+	if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, sizeof(authresp))) {
+		util_error("Failure sending auth response\n");
+		return EXIT_FAILURE;
 	}
+	if (exception != NULL) {
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception sending auth response", exception);
+		dotnet_exception_destroy(exception);
+		return EXIT_FAILURE;
+	} else {
+		printf("External auth didn't raise an error\n");
+	}
+}
 */
+
 static int get_challenge(struct sc_card *card) {
 	dotnet_exception_t *exception = NULL;
 	u8 challenge[255];
@@ -132,7 +136,7 @@ static int get_challenge(struct sc_card *card) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		util_error("Exception %s retrieving challenge\n", exception->type->type_str);
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception retrieving challenge", exception);
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
@@ -153,7 +157,7 @@ static int get_card_version(struct sc_card *card) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		util_error("Exception %s retrieving version\n", exception->type->type_str);
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception retrieving version", exception);
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
@@ -172,7 +176,7 @@ static int get_files(struct sc_card *card, char *path) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		util_error("Exception %s querying files for '%s'\n", exception->type->type_str, path);
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception querying files", exception);
 		idprimenet_string_array_destroy(results);
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
@@ -186,7 +190,8 @@ static int get_files(struct sc_card *card, char *path) {
 				return EXIT_FAILURE;
 			}
 			if (exception != NULL) {
-				util_error("Exception %s reading '%s'\n", exception->type->type_str, elem->value);
+				// TODO: Mention which file!
+				DOTNET_TOOL_PRINT_EXCEPTION("Exception reading file", exception);
 				dotnet_exception_destroy(exception);
 				return EXIT_FAILURE;
 			} else {
@@ -207,7 +212,7 @@ static int get_free_space(struct sc_card *card) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		util_error("Exception %s retrieving freespace\n", exception->type->type_str);
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception retrieving free space", exception);
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
@@ -226,7 +231,7 @@ static int get_max_pin_retry_counter(struct sc_card *card) {
 			return EXIT_FAILURE;
 	} else {
 		if (exception != NULL) {
-			DOTNET_PRINT_EXCEPTION("Exception retrieving max pin retry counter", exception);
+			DOTNET_TOOL_PRINT_EXCEPTION("Exception retrieving max pin retry counter", exception);
 			dotnet_exception_destroy(exception);
 			return EXIT_FAILURE;
 		} else {
@@ -243,7 +248,7 @@ static int force_gc(struct sc_card *card) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		util_error("Exception %s forcing GC\n", exception->type->type_str);
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception forcing GC", exception);
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
@@ -261,7 +266,7 @@ static int read_file(struct sc_card *card, char *path) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		util_error("Exception %s reading '%s'\n", exception->type->type_str, path);
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception reading file", exception);
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
