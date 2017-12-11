@@ -195,7 +195,13 @@ typedef struct {
 
 /* From page 109 of the IDPrime.NET integration guide */
 /* These could be calculated if we knew what the public key token
- * of the relevant assemblies were
+ * of the relevant assemblies were.
+ * Strangely, the first byte seems to be 0x00 in all cases, which
+ * doesn't match the docs.
+ *
+ * Known public key tokens:
+ * mscorlib.dll: 367DB8A346085E5D (screenshot on p63 of the IDPrime.NET
+ *                                 Smart Card Integration Guide)
  */
 static const idprimenet_namespace_hivecode_t idprimenet_namespace_hivecodes[] = {
 	{IDPRIME_NS_SYSTEM,                            "System",                            {0x00, 0xD2, 0x5D, 0x1C}},
