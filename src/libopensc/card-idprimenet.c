@@ -750,7 +750,7 @@ static sc_apdu_t *dotnet_op_to_apdu(
 	unsigned int apdu_prefix_len = 1 /* 0xD8 */ + 2 /* port */ + 1 /* 0x6F */ + 4 /* NS */ + 2 /* type */ + 2 /* method */ + 2 /* service length */;
 	unsigned int apdu_data_len;
 	u8 *apdu_data_ptr;
-	sc_apdu_t *apdu;
+	sc_apdu_t *apdu = NULL;
 	int cla;
 	u8 *args_data;
 	size_t args_data_len;
@@ -761,7 +761,7 @@ static sc_apdu_t *dotnet_op_to_apdu(
 		return NULL;
 
 	apdu = malloc(sizeof(sc_apdu_t));
-	if (!apdu) return NULL;
+	if (apdu == NULL) return NULL;
 
 	/* Does this call return any data? */
 	cla = strcmp("System.Void", op->type) ? SC_APDU_CASE_4_SHORT : SC_APDU_CASE_3_SHORT;
@@ -771,35 +771,33 @@ static sc_apdu_t *dotnet_op_to_apdu(
 
 	service_len = strlen(op->service);
 	if (service_len > 0xffff) {
-		free(apdu);
-		return NULL;
+		sc_log(card->ctx, "Service length %d too long\n", service_len);
+		goto err;
 	}
 
 	if (namespace_to_hivecode(op->namespace, namespace)) {
-		free(apdu);
-		return NULL;
+		sc_log(card->ctx, "Failed to calculate hivecode for namespace '%s'\n", op->namespace);
+		goto err;
 	}
 	if (type_to_hivecode(op->type, type)) {
-		free(apdu);
-		return NULL;
+		sc_log(card->ctx, "Failed to calculate hivecode for type '%s'\n", op->type);
+		goto err;
 	}
 	if (method_to_hivecode(op->method, method)) {
-		free(apdu);
-		return NULL;
+		sc_log(card->ctx, "Failed to calculate hivecode for method '%s'\n", op->method);
+		goto err;
 	}
 
 	if (args_to_adpu_data(&args_data, &args_data_len, n_args, args)) {
-		free(apdu);
-		return NULL;
+		sc_log(card->ctx, "Failed to calculate APDU data for method arguments\n");
+		goto err;
 	}
+
 	apdu_data_len = apdu_prefix_len + service_len + args_data_len;
 	apdu_data_ptr = malloc(apdu_data_len);
 
-	if (!apdu_data_ptr) {
-		free(args_data);
-		free(apdu);
-		return NULL;
-	}
+	if (apdu_data_ptr == NULL)
+		goto err;
 
 	apdu->lc = apdu->datalen = apdu_data_len;
 	apdu->data = apdu_data_ptr;
@@ -825,6 +823,10 @@ static sc_apdu_t *dotnet_op_to_apdu(
 	sc_log(card->ctx, "APDU generated for: %s:0x%02x%02x [%s] (%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
 
 	return apdu;
+
+err:
+	if (apdu != NULL) free(apdu);
+	return NULL;
 }
 
 static int idprimenet_parse_exception(dotnet_op_response_t *response, const unsigned char *resp, const size_t resplen) {
@@ -933,7 +935,9 @@ static int idprimenet_op_call(
 			}
 			response->namespace = hivecode_to_namespace(resp);
 			if (!response->namespace) {
-				sc_log(card->ctx, "Couldn't determine response namespace\n");
+				sc_log(card->ctx, "Couldn't determine response namespace for 0x%02x%02x%02x%02x\n",
+					resp[0], resp[1], resp[2], resp[3]
+				);
 				rv = SC_ERROR_UNKNOWN_DATA_RECEIVED;
 				goto out;
 			}
@@ -1594,6 +1598,9 @@ int idprimenet_op_mscm_queryfreespace(
 
 		// So what does the above mean? 1 key container available? 15 max key containers
 		// and 0xb468 (46208) bytes free?
+		// Integration guide specifies the card as supporting:
+		// 50KB free Flash memory space for certificate and application loading
+		// Number of 1024 / 2048 bits certificates and keys: 15
 	}
 
 err:
