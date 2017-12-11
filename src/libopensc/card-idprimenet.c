@@ -411,12 +411,12 @@ static int idprimenet_apdu_to_string(const u8 *data, size_t data_len, char *dest
 	unsigned int strlen;
 	static const unsigned short header_len = 2;
 	if (data_len < header_len) {
-		printf("Malformed data - too small for a string\n");
+		printf("Malformed data - too small for a string\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 	strlen = (data[0] << 8) | data[1];
 	if (*dest_len < strlen + 1) {
-		printf("Buffer isn't big enough for string\n");
+		printf("Buffer isn't big enough for string\n"); // TODO: Replace with sc_log
 		return 0;
 	}
 	memcpy(dest, data + header_len, strlen);
@@ -450,11 +450,11 @@ static int idprimenet_apdu_to_string_array(
 	const unsigned short header_len = 4;
 	idprimenet_string_array_t **current = dest;
 	if (data_len < header_len) {
-		printf("Malformed data - too small for a string array\n");
+		printf("Malformed data - too small for a string array\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 	if (dest == NULL) {
-		printf("dest cannot be null\n");
+		printf("dest cannot be null\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 
@@ -491,11 +491,11 @@ static int idprimenet_apdu_to_u1array(
 	size_t array_len;
 
 	if (data_len < 4) {
-		printf("Malformed data - too small for a u1array\n");
+		printf("Malformed data - too small for a u1array\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 	if ((data_len - 4) > *dest_len) {
-		printf("Buffer too small for %ld bytes\n", data_len);
+		printf("Buffer too small for %ld bytes\n", data_len); // TODO: Replace with sc_log
 		return -1;
 	}
 
@@ -514,11 +514,11 @@ static int idprimenet_apdu_to_byte(
 		size_t data_len,
 		u8 *dest) {
 	if (!data_len) {
-		printf("Malformed data - too small for a byte\n");
+		printf("Malformed data - too small for a byte\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 	if (!dest) {
-		printf("Target buffer is null\n");
+		printf("Target buffer is null\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 
@@ -533,11 +533,11 @@ static int idprimenet_apdu_to_boolean(
 		size_t data_len,
 		u8 *dest) {
 	if (!data_len) {
-		printf("Malformed data - too small for a byte\n");
+		printf("Malformed data - too small for a byte\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 	if (!dest) {
-		printf("Target buffer is null\n");
+		printf("Target buffer is null\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 
@@ -554,15 +554,15 @@ static int idprimenet_apdu_to_s4array(
 	size_t array_len;
 
 	if (data_len < 4) {
-		printf("Malformed data - too small for a s4array\n");
+		printf("Malformed data - too small for a s4array\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 	if ((data_len - 4) / 4 > *dest_len) {
-		printf("Buffer of %ld ints too small for %ld bytes\n", *dest_len, data_len);
+		printf("Buffer of %ld ints too small for %ld bytes\n", *dest_len, data_len); // TODO: Replace with sc_log
 		return -1;
 	}
 	if (data_len % 4) {
-		printf("Buffer not a multiple of 4 bytes\n");
+		printf("Buffer not a multiple of 4 bytes\n"); // TODO: Replace with sc_log
 		return -1;
 	}
 
@@ -598,7 +598,7 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 		elem = malloc(sizeof(struct arg_data_list));
 
 		if (elem == NULL) {
-			printf("malloc failure\n");
+			printf("malloc failure\n"); // TODO: Replace with sc_log
 			goto error;
 		}
 		elem->next = NULL;
@@ -612,7 +612,7 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 						goto error;
 					elem->entry.data = malloc(4);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n");
+						printf("malloc failure\n"); // TODO: Replace with sc_log
 						goto error;
 					}
 					elem->entry.data_len = 4;
@@ -631,7 +631,7 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 						goto error;
 					elem->entry.data = malloc(1);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n");
+						printf("malloc failure\n"); // TODO: Replace with sc_log
 						goto error;
 					}
 					elem->entry.data_len = 1;
@@ -645,7 +645,7 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 					arg_data_len = 4 + array_len;
 					elem->entry.data = malloc(arg_data_len);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n");
+						printf("malloc failure\n"); // TODO: Replace with sc_log
 						goto error;
 					}
 					elem->entry.data_len = arg_data_len;
@@ -664,7 +664,7 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 					arg_data_len = header_len + string_len;
 					elem->entry.data = malloc(arg_data_len);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n");
+						printf("malloc failure\n"); // TODO: Replace with sc_log
 						goto error;
 					}
 					elem->entry.data_len = arg_data_len;
@@ -677,7 +677,7 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 				}
 				break;
 			default:
-				printf("Don't know how to size arg type %d\n", arg.type);
+				printf("Don't know how to size arg type %d\n", arg.type); // TODO: Replace with sc_log
 				goto error;
 		}
 		if (args_data_head == NULL) {
@@ -723,6 +723,8 @@ static sc_apdu_t *dotnet_op_to_apdu(
 	int cla;
 	u8 *args_data;
 	size_t args_data_len;
+
+	LOG_FUNC_CALLED(card->ctx);
 
 	if (!op || !op->service)
 		return NULL;
@@ -789,7 +791,7 @@ static sc_apdu_t *dotnet_op_to_apdu(
 	memcpy(apdu_data_ptr + service_len, args_data, args_data_len);
 	free(args_data);
 
-	//printf("APDU generated for: %s:0x%02x%02x [%s] (%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
+	sc_log(card->ctx, "APDU generated for: %s:0x%02x%02x [%s] (%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
 
 	return apdu;
 }
@@ -844,6 +846,9 @@ static int idprimenet_op_call(
 	const idprimenet_type_hivecode_t *r_type;
 
 	if (!card) return 0;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (!response) return 0;
 
 	resp = malloc(resplen);
@@ -869,7 +874,8 @@ static int idprimenet_op_call(
 
 	if (res != SC_SUCCESS) {
 		free(apdu);
-		LOG_TEST_RET(card->ctx, res, "APDU transmit failed"); // TODO: See if this does what we actually want */
+		sc_log(card->ctx, "APDU transmit failed");
+		return res;
 	}
 
 	if (!strcmp("MSCM", service) && apdu->resplen < resp_header_size) {
@@ -878,7 +884,7 @@ static int idprimenet_op_call(
 			response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
 			response->data_len = 0;
 		} else {
-			printf("Response too short?!\n");
+			sc_log(card->ctx, "Response too short?!");
 		}
 
 		free(apdu);
@@ -889,17 +895,17 @@ static int idprimenet_op_call(
 		// MSCM has its own special response format
 		if (idprimenet_parse_exception(response, apdu->resp, apdu->resplen)) {
 			if (apdu->resplen < resp_header_size) {
-				printf("Response too short - only %ld bytes\n", apdu->resplen);
+				sc_log(card->ctx, "Response too short - only %ld bytes\n", apdu->resplen);
 				goto error;
 			}
 			response->namespace = hivecode_to_namespace(resp);
 			if (!response->namespace) {
-				printf("Couldn't determine response namespace\n");
+				sc_log(card->ctx, "Couldn't determine response namespace\n");
 				goto error;
 			}
 			r_type = hivecode_to_type(apdu->resp + 4); // TODO: Check for failed lookup
 			if (!r_type) {
-				printf("Couldn't determine response data type for %02x %02x\n", *(apdu->resp + 4), *(apdu->resp + 5));
+				sc_log(card->ctx, "Couldn't determine response data type for %02x %02x\n", *(apdu->resp + 4), *(apdu->resp + 5));
 				goto error;
 			}
 			response->data_type = r_type->type;
@@ -909,24 +915,24 @@ static int idprimenet_op_call(
 				response->data_len = apdu->resplen - resp_header_size;
 				memcpy(response->data, apdu->resp + resp_header_size, response->data_len);
 				if (response->namespace->namespace_id != expected_response_ns) {
-					printf("Response had unexpected namespace: %s\n", response->namespace->namespace);
+					sc_log(card->ctx, "Response had unexpected namespace: %s\n", response->namespace->namespace);
 					goto error;
 				}
 
 				if (response->data_type != expected_response_type) {
-					printf("Response had unexpected type: %s\n", r_type->type_str);
+					sc_log(card->ctx, "Response had unexpected type: %s\n", r_type->type_str);
 					goto error;
 				}
 
 				if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID && response->data) {
-					printf("Got some data in the response, but expected a void result\n");
+					sc_log(card->ctx, "Got some data in the response, but expected a void result\n");
 					goto error;
 				}
 			}
 		}
 	} else {
 		if (!apdu->resplen) {
-			printf("Empty response\n");
+			sc_log(card->ctx, "Empty response\n");
 			goto error;
 		}
 		switch (*resp) {
@@ -942,7 +948,7 @@ static int idprimenet_op_call(
 				if (idprimenet_parse_exception(response, apdu->resp + 1, apdu->resplen - 1)) goto error;
 				break;
 			default:
-				printf("Invalid first byte of non-MSCM response %02x\n", *resp);
+				sc_log(card->ctx, "Invalid first byte of non-MSCM response %02x\n", *resp);
 				goto error;
 		}
 	}
@@ -962,7 +968,10 @@ int idprimenet_op_mscm_getchallenge(
 	dotnet_op_response_t *response;
 	int res;
 
-	if (card == NULL         ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (challenge == NULL    ) return -1;
 	if (challenge_len == NULL) return -1;
 	if (exception == NULL    ) return -1;
@@ -984,7 +993,7 @@ int idprimenet_op_mscm_getchallenge(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -993,9 +1002,10 @@ int idprimenet_op_mscm_getchallenge(
 		if (*exception == NULL) goto error;
 	} else {
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, challenge, challenge_len)) {
-			printf("Failed to process response\n");
+			sc_log(card->ctx, "Failed to process response\n");
 			goto error;
 		}
+		sc_log(card->ctx, "CardModuleService.GetChallenge response: '%s'", sc_dump_hex(challenge, *challenge_len));
 	}
 
 	dotnet_op_response_destroy(response);
@@ -1014,7 +1024,10 @@ int idprimenet_op_contentmanager_getserialnumber(
 	dotnet_op_response_t *response;
 	int res;
 
-	if (card == NULL            ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (exception == NULL       ) return -1;
 	if (serialnumber == NULL    ) return -1;
 	if (serialnumber_len == NULL) return -1;
@@ -1036,7 +1049,7 @@ int idprimenet_op_contentmanager_getserialnumber(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1045,7 +1058,7 @@ int idprimenet_op_contentmanager_getserialnumber(
 		if (*exception == NULL) goto error;
 	} else {
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, serialnumber, serialnumber_len)) {
-			printf("Failed to process response\n");
+			sc_log(card->ctx, "Failed to process response\n");
 			goto error;
 		}
 	}
@@ -1066,7 +1079,10 @@ int idprimenet_op_mscm_getserialnumber(
 	dotnet_op_response_t *response;
 	int res;
 
-	if (card == NULL            ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (serialnumber == NULL    ) return -1;
 	if (serialnumber_len == NULL) return -1;
 	if (exception == NULL       ) return -1;
@@ -1088,7 +1104,7 @@ int idprimenet_op_mscm_getserialnumber(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1097,7 +1113,7 @@ int idprimenet_op_mscm_getserialnumber(
 		if (*exception == NULL) goto error;
 	} else {
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, serialnumber, serialnumber_len)) {
-			printf("Failed to process response\n");
+			sc_log(card->ctx, "Failed to process response\n");
 			goto error;
 		}
 	}
@@ -1124,10 +1140,15 @@ int idprimenet_op_mscm_externalauthenticate(
 		authresp
 	};
 
-	if (card == NULL      ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (authresp == NULL  ) return -1;
 	if (exception == NULL ) return -1;
 	if (*exception != NULL) return -1;
+
+	sc_log(card->ctx, "External authentication cryptogram: '%s'", sc_dump_hex(authresp, authresp_len));
 
 	res = idprimenet_op_call(
 		card,
@@ -1144,7 +1165,7 @@ int idprimenet_op_mscm_externalauthenticate(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1174,7 +1195,10 @@ int idprimenet_op_mscm_isauthenticated (
 		&role
 	};
 
-	if (card == NULL      ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (exception == NULL ) return -1;
 	if (*exception != NULL) return -1;
 
@@ -1193,7 +1217,7 @@ int idprimenet_op_mscm_isauthenticated (
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1219,7 +1243,10 @@ int idprimenet_op_mscm_forcegarbagecollector(
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (card == NULL      ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (exception == NULL ) return -1;
 	if (*exception != NULL) return -1;
 
@@ -1237,7 +1264,7 @@ int idprimenet_op_mscm_forcegarbagecollector(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1261,7 +1288,10 @@ int idprimenet_op_mscm_getversion(
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (card == NULL      ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (exception == NULL ) return -1;
 	if (*exception != NULL) return -1;
 
@@ -1279,7 +1309,7 @@ int idprimenet_op_mscm_getversion(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1311,7 +1341,10 @@ int idprimenet_op_mscm_getfiles(
 		(u8*)path
 	};
 
-	if (card == NULL      ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (path == NULL      ) return -1;
 	if (dest == NULL      ) return -1;
 	if (exception == NULL ) return -1;
@@ -1332,7 +1365,7 @@ int idprimenet_op_mscm_getfiles(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1369,7 +1402,10 @@ int idprimenet_op_mscm_readfile(
 		data_len
 	};
 
-	if (card == NULL      ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (path == NULL      ) return -1;
 	if (data == NULL      ) return -1;
 	if (data_len == NULL  ) return -1;
@@ -1394,7 +1430,7 @@ int idprimenet_op_mscm_readfile(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1403,7 +1439,7 @@ int idprimenet_op_mscm_readfile(
 		if (*exception == NULL) goto error;
 	} else {
 		if (idprimenet_apdu_to_u1array(response->data, response->data_len, data, data_len)) {
-			printf("Failed to process response\n");
+			sc_log(card->ctx, "Failed to process response\n");
 			goto error;
 		}
 	}
@@ -1423,7 +1459,10 @@ int idprimenet_op_mscm_maxpinretrycounter(
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (card == NULL              ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (maxpinretrycounter == NULL) return -1;
 	if (exception  == NULL        ) return -1;
 	if (*exception != NULL        ) return -1;
@@ -1442,7 +1481,7 @@ int idprimenet_op_mscm_maxpinretrycounter(
 	);
 
 	if (!res) {
-		printf("Failure talking to card\n");
+		sc_log(card->ctx, "Failure talking to card\n");
 		goto error;
 	}
 
@@ -1453,7 +1492,7 @@ int idprimenet_op_mscm_maxpinretrycounter(
 		if (response->data_len == 1) {
 			*maxpinretrycounter = *response->data;
 		} else {
-			printf("Expected one byte, got %ld bytes\n", response->data_len);
+			sc_log(card->ctx, "Expected one byte, got %ld bytes\n", response->data_len);
 		}
 	}
 
@@ -1472,7 +1511,10 @@ int idprimenet_op_mscm_queryfreespace(
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (card == NULL         ) return -1;
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (freespace == NULL    ) return -1;
 	if (freespace_len == NULL) return -1;
 	if (exception  == NULL   ) return -1;
@@ -1532,10 +1574,13 @@ int idprimenet_op_mscm_querykeysizes(
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int res;
 
-	if (card == NULL      ) return -1;
-	if (key_sizes == NULL ) return -1;
-	if (exception  == NULL) return -1;
-	if (*exception != NULL) return -1;
+	if (card == NULL) return SC_ERROR_INVALID_ARGUMENTS;
+
+	LOG_FUNC_CALLED(card->ctx);
+
+	if (key_sizes == NULL ) LOG_FUNC_RETURN(card->ctx, SC_ERROR_INVALID_ARGUMENTS);
+	if (exception  == NULL) LOG_FUNC_RETURN(card->ctx, SC_ERROR_INVALID_ARGUMENTS);
+	if (*exception != NULL) LOG_FUNC_RETURN(card->ctx, SC_ERROR_INVALID_ARGUMENTS);
 
 	res = idprimenet_op_call(
 		card,
@@ -1549,11 +1594,11 @@ int idprimenet_op_mscm_querykeysizes(
 		IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
 		0
 	);
-	if (!res) goto error;
+	if (!res) goto err;
 
 	if (response->exception != NULL) {
 		*exception = dotnet_exception_clone(response->exception);
-		if (*exception == NULL) goto error;
+		if (*exception == NULL) goto err;
 	} else {
 		size_t key_sizes_data_len = 4;
 		int key_sizes_data[key_sizes_data_len];
@@ -1561,8 +1606,8 @@ int idprimenet_op_mscm_querykeysizes(
 		idprimenet_apdu_to_s4array(response->data, response->data_len, key_sizes_data, &key_sizes_data_len);
 
 		if (key_sizes_data_len != 4) {
-			printf("Unexpected respones to QueryKeySizes(). Only %ld bytes\n", key_sizes_data_len);
-			goto error;
+			sc_log(card->ctx, "Unexpected respones to QueryKeySizes(). Only %ld bytes\n", key_sizes_data_len);
+			goto err;
 		}
 		key_sizes->incrementalBitLen = key_sizes_data[0];
 		key_sizes->maximumBitLen     = key_sizes_data[1];
@@ -1571,15 +1616,14 @@ int idprimenet_op_mscm_querykeysizes(
 	}
 
 	dotnet_op_response_destroy(response);
-	return 0;
+	LOG_FUNC_RETURN(card->ctx, SC_SUCCESS);
 
-error:
+err:
 	dotnet_op_response_destroy(response);
-	return 1;
+	LOG_FUNC_RETURN(card->ctx, SC_ERROR_CARD_CMD_FAILED);
 }
 
-static int idprimenet_match_card(struct sc_card *card)
-{
+static int idprimenet_match_card(struct sc_card *card) {
 	int i;
 
 	LOG_FUNC_CALLED(card->ctx);
@@ -1596,8 +1640,12 @@ int idprimenet_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
 	dotnet_exception_t *exception = NULL;
 	idprimenet_string_array_t *results = NULL;
 
+	if (card == NULL) return -1;
+
+	LOG_FUNC_CALLED(card->ctx);
+
 	if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
-		printf("Failure querying files for '%s'\n", path);
+		sc_log(card->ctx, "Failure querying files for '%s'\n", path);
 		idprimenet_string_array_destroy(results);
 		return 0;
 	}
@@ -1625,8 +1673,7 @@ int idprimenet_select_file(sc_card_t *card, const sc_path_t *path, sc_file_t **f
 	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
 }
 
-static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number *serial)
-{
+static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number *serial) {
 	u8 serialnumber[255];
 	size_t serialnumber_len = 255;
 	struct sc_context *ctx = card->ctx;
@@ -1636,10 +1683,10 @@ static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number
 	/* There are several ways to retrieve this */
 	//if (idprimenet_op_contentmanager_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
 	if (idprimenet_op_mscm_getserialnumber(card, &exception, serialnumber, &serialnumber_len)) {
-		printf("Failure retrieving serial number\n");
+		sc_log(card->ctx, "Failure retrieving serial number\n");
 	} else {
 		if (exception != NULL) {
-			printf("Exception %s retrieving serial number\n", exception->type->type_str);
+			sc_log(card->ctx, "Exception %s retrieving serial number\n", exception->type->type_str);
 			dotnet_exception_destroy(exception);
 		} else {
 			memcpy(serial->value, serialnumber, serialnumber_len);
@@ -1649,38 +1696,34 @@ static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number
 	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
 }
 
-static int idprimenet_init(struct sc_card *card)
-{
+static int idprimenet_init(struct sc_card *card) {
 	LOG_FUNC_CALLED(card->ctx);
 
 	card->name = "Gemalto IDPrime.NET card";
 	card->drv_data = NULL;
 
-	{
-		idprimenet_key_sizes_t keysizes = {0, 0, 0, 0};
-		dotnet_exception_t *exception = NULL;
+	idprimenet_key_sizes_t keysizes = {0, 0, 0, 0};
+	dotnet_exception_t *exception = NULL;
 
-		if (idprimenet_op_mscm_querykeysizes(card, &exception, &keysizes)) {
-			sc_log(card->ctx, "Failure retrieving keysizes\n");
-			return 0;
-		}
-		if (exception != NULL) {
-			printf("Exception %s retrieving keysizes\n", exception->type->type_str);
-			dotnet_exception_destroy(exception);
-			return 0;
-		} else {
-			for (unsigned int keysize = keysizes.minimumBitLen;
-			     keysize <= keysizes.maximumBitLen;
-			     keysize += keysizes.incrementalBitLen)
-				_sc_card_add_rsa_alg(card, keysize, IDPRIMENET_CARD_DEFAULT_FLAGS,/* exponent - TODO: understand */ 0);
-		}
+	if (idprimenet_op_mscm_querykeysizes(card, &exception, &keysizes)) {
+		sc_log(card->ctx, "Failure retrieving keysizes\n");
+		LOG_FUNC_RETURN(card->ctx, SC_ERROR_CARD_CMD_FAILED);
+	}
+	if (exception != NULL) {
+		sc_log(card->ctx, "Exception %s retrieving keysizes\n", exception->type->type_str);
+		dotnet_exception_destroy(exception);
+		LOG_FUNC_RETURN(card->ctx, SC_ERROR_CARD_CMD_FAILED);
+	} else {
+		for (unsigned int keysize = keysizes.minimumBitLen;
+		     keysize <= keysizes.maximumBitLen;
+		     keysize += keysizes.incrementalBitLen)
+			_sc_card_add_rsa_alg(card, keysize, IDPRIMENET_CARD_DEFAULT_FLAGS,/* exponent - TODO: understand */ 0);
 	}
 
 	LOG_FUNC_RETURN(card->ctx, SC_SUCCESS);
 }
 
-static int idprimenet_card_ctl(struct sc_card *card, unsigned long cmd, void *ptr)
-{
+static int idprimenet_card_ctl(struct sc_card *card, unsigned long cmd, void *ptr) {
 	LOG_FUNC_CALLED(card->ctx);
 	switch (cmd) {
 	case SC_CARDCTL_GET_SERIALNR:
@@ -1690,8 +1733,7 @@ static int idprimenet_card_ctl(struct sc_card *card, unsigned long cmd, void *pt
 	LOG_FUNC_RETURN(card->ctx, SC_ERROR_NOT_SUPPORTED);
 }
 
-static struct sc_card_driver * sc_get_driver(void)
-{
+static struct sc_card_driver * sc_get_driver(void) {
 	struct sc_card_driver *iso_drv = sc_get_iso7816_driver();
 
 	iso_ops = iso_drv->ops;
@@ -1706,8 +1748,7 @@ static struct sc_card_driver * sc_get_driver(void)
 	return &idprimenet_drv;
 }
 
-struct sc_card_driver * sc_get_idprimenet_driver(void)
-{
+struct sc_card_driver * sc_get_idprimenet_driver(void) {
 	return sc_get_driver();
 }
 
