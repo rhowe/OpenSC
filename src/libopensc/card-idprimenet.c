@@ -607,7 +607,12 @@ static int idprimenet_apdu_to_s4array(
 	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
 }
 
-static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, va_list args) {
+static int args_to_adpu_data(
+		sc_context_t *ctx,
+		u8 **data,
+		size_t *data_len,
+		unsigned int n_args,
+		va_list args) {
 	size_t args_data_len = 0;
 	struct arg_data {
 		u8 *data;
@@ -620,6 +625,9 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 	struct arg_data_list *args_data = NULL;
 	struct arg_data_list *args_data_head = args_data;
 	u8 *dest;
+	int rv = SC_SUCCESS;
+
+	LOG_FUNC_CALLED(ctx);
 
 	for (unsigned int i = 0; i < n_args; i++) {
 		idprimenet_arg_t arg = va_arg(args, idprimenet_arg_t);
@@ -629,8 +637,8 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 		elem = malloc(sizeof(struct arg_data_list));
 
 		if (elem == NULL) {
-			printf("malloc failure\n"); // TODO: Replace with sc_log
-			goto error;
+			rv = SC_ERROR_OUT_OF_MEMORY;
+			goto err;
 		}
 		elem->next = NULL;
 
@@ -639,12 +647,14 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 			case IDPRIME_TYPE_SYSTEM_INT32:
 				{
 					int val;
-					if (arg.value_len != 1)
-						goto error;
+					if (arg.value_len != 1) {
+						rv = SC_ERROR_INVALID_DATA;
+						goto err;
+					}
 					elem->entry.data = malloc(4);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n"); // TODO: Replace with sc_log
-						goto error;
+						rv = SC_ERROR_OUT_OF_MEMORY;
+						goto err;
 					}
 					elem->entry.data_len = 4;
 					val = *(int*)arg.value;
@@ -658,12 +668,14 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 				break;
 			case IDPRIME_TYPE_SYSTEM_BYTE:
 				{
-					if (arg.value_len != 1)
-						goto error;
+					if (arg.value_len != 1) {
+						rv = SC_ERROR_INVALID_DATA;
+						goto err;
+					}
 					elem->entry.data = malloc(1);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n"); // TODO: Replace with sc_log
-						goto error;
+						rv = SC_ERROR_OUT_OF_MEMORY;
+						goto err;
 					}
 					elem->entry.data_len = 1;
 					*(elem->entry.data) = *((u8*)arg.value);
@@ -676,8 +688,8 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 					arg_data_len = 4 + array_len;
 					elem->entry.data = malloc(arg_data_len);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n"); // TODO: Replace with sc_log
-						goto error;
+						rv = SC_ERROR_OUT_OF_MEMORY;
+						goto err;
 					}
 					elem->entry.data_len = arg_data_len;
 					elem->entry.data[0] = (array_len >> 24) & 0xff;
@@ -695,8 +707,8 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 					arg_data_len = header_len + string_len;
 					elem->entry.data = malloc(arg_data_len);
 					if (elem->entry.data == NULL) {
-						printf("malloc failure\n"); // TODO: Replace with sc_log
-						goto error;
+						rv = SC_ERROR_OUT_OF_MEMORY;
+						goto err;
 					}
 					elem->entry.data_len = arg_data_len;
 					elem->entry.data[0] = (string_len >> 8) & 0xff;
@@ -708,8 +720,9 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 				}
 				break;
 			default:
-				printf("Don't know how to size arg type %d\n", arg.type); // TODO: Replace with sc_log
-				goto error;
+				sc_log(ctx, "Don't know how to size arg type %d\n", arg.type);
+				rv = SC_ERROR_INVALID_DATA;
+				goto err;
 		}
 		if (args_data_head == NULL) {
 			args_data_head = elem;
@@ -721,7 +734,10 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 
 	*data_len = args_data_len;
 	dest = malloc(args_data_len);
-	if (!dest) goto error;
+	if (dest == NULL) {
+		rv = SC_ERROR_OUT_OF_MEMORY;
+		goto err;
+	}
 
 	*data = dest;
 	for (struct arg_data_list *elem = args_data_head; elem != NULL; elem = elem->next) {
@@ -729,14 +745,13 @@ static int args_to_adpu_data(u8 **data, size_t *data_len, unsigned int n_args, v
 		dest += elem->entry.data_len;
 		free(elem->entry.data);
 	}
-	return 0;
+	LOG_FUNC_RETURN(ctx, rv);
 
-error:
-	va_end(args);
+err:
 	for (struct arg_data_list *elem = args_data; elem != NULL; elem = elem->next) {
 		free(elem->entry.data);
 	}
-	return 1;
+	LOG_FUNC_RETURN(ctx, rv);
 }
 
 static sc_apdu_t *dotnet_op_to_apdu(
@@ -788,7 +803,7 @@ static sc_apdu_t *dotnet_op_to_apdu(
 		goto err;
 	}
 
-	if (args_to_adpu_data(&args_data, &args_data_len, n_args, args)) {
+	if (args_to_adpu_data(card->ctx, &args_data, &args_data_len, n_args, args)) {
 		sc_log(card->ctx, "Failed to calculate APDU data for method arguments\n");
 		goto err;
 	}
@@ -820,7 +835,7 @@ static sc_apdu_t *dotnet_op_to_apdu(
 	memcpy(apdu_data_ptr + service_len, args_data, args_data_len);
 	free(args_data);
 
-	sc_log(card->ctx, "APDU generated for: %s:0x%02x%02x [%s] (%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
+	sc_log(card->ctx, "APDU generated for: svc:%s:0x%02x%02x [ns:%s] (t:%s) %s\n", op->service, op->port[0], op->port[1], op->namespace, op->type, op->method);
 
 	return apdu;
 
