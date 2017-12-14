@@ -185,40 +185,70 @@ typedef enum {
 
 typedef struct {
 	idprimenet_namespace_t namespace_id;
+	u8 pubkeytoken[8];
 	char *namespace;
-	u8 hivecode[4];
+	u8 hivecode[3];
 } idprimenet_namespace_hivecode_t;
 
 /* From page 109 of the IDPrime.NET integration guide */
-/* These could be calculated if we knew what the public key token
- * of the relevant assemblies were.
- * Strangely, the first byte seems to be 0x00 in all cases, which
- * doesn't match the docs.
+
+/* The IDPrime.NET integration guide states that namespace hivecodes
+ * are the first 4 bytes of MD5("<publickeytoken>.<namespace>"), but
+ * that doesn't match reality where the first byte is always 0.
+ *
+ * Reading US patent US 2011/0264669 A1  s. 0478, the hivecode
+ * generation is described as taking the first 3 bytes from the
+ * hash and adding a 4th 0 byte "for aligning the bytes" which
+ * matches up with all observed real-world namespace hivecodes.
  *
  * Known public key tokens:
  * mscorlib.dll: 367DB8A346085E5D (screenshot on p63 of the IDPrime.NET
  *                                 Smart Card Integration Guide)
+ * Made up public key tokens:
+ * CardModuleService: 000000000026EF84 (it's a valid hash collision for
+ *                                      the known hivecode and made-up
+ *                                      namespace name)
+ * NetcardFilesystem: 00000000024ACD4C (it's a valid hash collision for
+ *                                      the known hivecode)
  */
-static const idprimenet_namespace_hivecode_t idprimenet_namespace_hivecodes[] = {
-	{IDPRIME_NS_SYSTEM,                            "System",                            {0x00, 0xD2, 0x5D, 0x1C}},
-	{IDPRIME_NS_SYSTEM_IO,                         "System.IO",                         {0x00, 0xD5, 0xE6, 0xDB}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CHANNELS,  "System.Runtime.Remoting.Channels",  {0x00, 0x00, 0x88, 0x6E}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING,           "System.Runtime.Remoting",           {0x00, 0xEB, 0x3D, 0xD9}},
-	{IDPRIME_NS_SYSTEM_SECURITY_CRYPTOGRAPHY,      "System.Security.Cryptography",      {0x00, 0xAC, 0xF5, 0x3B}},
-	{IDPRIME_NS_SYSTEM_COLLECTIONS,                "System.Collections",                {0x00, 0xC5, 0xA0, 0x10}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CONTEXTS,  "System.Runtime.Remoting.Contexts",  {0x00, 0x1F, 0x49, 0x94}},
-	{IDPRIME_NS_SYSTEM_SECURITY,                   "System.Security",                   {0x00, 0x96, 0x41, 0x45}},
-	{IDPRIME_NS_SYSTEM_REFLECTION,                 "System.Reflection",                 {0x00, 0x08, 0x75, 0x0F}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_MESSAGING, "System.Runtime.Remoting.Messaging", {0x00, 0xDE, 0xB9, 0x40}},
-	{IDPRIME_NS_SYSTEM_DIAGNOSTICS,                "System.Diagnostics",                {0x00, 0x97, 0x99, 0x5F}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_COMPILERSERVICES,   "System.Runtime.CompilerServices",   {0x00, 0xF6, 0x3E, 0x11}},
-	{IDPRIME_NS_SYSTEM_RUNTIME_SERIALIZATION,      "System.Runtime.Serialization",      {0x00, 0x8D, 0x3B, 0x3D}}, /* From libgtop11dotnet MarshallerCfg.h */
-	{IDPRIME_NS_SYSTEM_TEXT,                       "System.Text",                       {0x00, 0x70, 0x27, 0x56}},
-	{IDPRIME_NS_SMARTCARD,                         "SmartCard",                         {0x00, 0xF5, 0xEF, 0xBF}},
+static idprimenet_namespace_hivecode_t idprimenet_namespace_hivecodes[] = {
+	{IDPRIME_NS_SYSTEM,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System",                            {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_IO,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.IO",                         {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CHANNELS,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Runtime.Remoting.Channels",  {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Runtime.Remoting",           {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_SECURITY_CRYPTOGRAPHY,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Security.Cryptography",      {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_COLLECTIONS,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Collections",                {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_CONTEXTS,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Runtime.Remoting.Contexts",  {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_SECURITY,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Security",                   {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_REFLECTION,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Reflection",                 {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_REMOTING_MESSAGING,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Runtime.Remoting.Messaging", {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_DIAGNOSTICS,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Diagnostics",                {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_COMPILERSERVICES,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Runtime.CompilerServices",   {0, 0, 0}},
+	{IDPRIME_NS_SYSTEM_RUNTIME_SERIALIZATION,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Runtime.Serialization",      {0, 0, 0}}, /* From libgtop11dotnet MarshallerCfg.h */
+	{IDPRIME_NS_SYSTEM_TEXT,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "System.Text",                       {0, 0, 0}},
+	{IDPRIME_NS_SMARTCARD,
+		{0x36, 0x7D, 0xB8, 0xA3, 0x46, 0x08, 0x5E, 0x5D}, "SmartCard",                         {0, 0, 0}},
 	/* Not really clear this is the real namespace name */
-	{IDPRIME_NS_CARDMODULESERVICE,                 "CardModuleService",                 {0x00, 0xC0, 0x4B, 0x4E}},
-	{IDPRIME_NS_NETCARDFILESYSTEM,                 "NetcardFilesystem",                 {0x00, 0xA1, 0xAC, 0x39}}, /* From libgtop11dotnet MarshallerCfg.h */
-	{IDPRIME_NS_NONE,                              NULL,                                {0,    0,    0,    0   }}
+	{IDPRIME_NS_CARDMODULESERVICE,
+		{0x00, 0x00, 0x00, 0x00, 0x00, 0x26, 0xEF, 0x84}, "CardModuleService",                 {0, 0, 0}},
+	{IDPRIME_NS_NETCARDFILESYSTEM,
+		{0x00, 0x00, 0x00, 0x00, 0x02, 0x4a, 0xcd, 0x4c}, "NetcardFilesystem",                 {0, 0, 0}}, /* From libgtop11dotnet MarshallerCfg.h */
+	{IDPRIME_NS_NONE,
+		{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, NULL,                                {0, 0, 0}},
 };
 
 dotnet_exception_t *dotnet_exception_new() {
@@ -295,13 +325,67 @@ static struct sc_card_driver idprimenet_drv = {
 	NULL, 0, NULL
 };
 
+static int generate_ns_hivecodes() {
+	EVP_MD_CTX *mdctx = NULL;
+	const EVP_MD *md;
+	int rv = SC_ERROR_INTERNAL;
+
+	md = EVP_md5();
+	if (md == NULL || md == NID_undef) {
+		return SC_ERROR_INTERNAL;
+	}
+	mdctx = EVP_MD_CTX_new();
+	if (mdctx == NULL) {
+		return SC_ERROR_INTERNAL;
+	}
+	for (unsigned int i = 0; idprimenet_namespace_hivecodes[i].namespace_id != IDPRIME_NS_NONE; i++) {
+		u8 md_value[EVP_MAX_MD_SIZE];
+		unsigned int md_len;
+		char pubkeytokenstr[17];
+
+		sprintf(pubkeytokenstr, "%02X%02X%02X%02X%02X%02X%02X%02X",
+			idprimenet_namespace_hivecodes[i].pubkeytoken[0],
+			idprimenet_namespace_hivecodes[i].pubkeytoken[1],
+			idprimenet_namespace_hivecodes[i].pubkeytoken[2],
+			idprimenet_namespace_hivecodes[i].pubkeytoken[3],
+			idprimenet_namespace_hivecodes[i].pubkeytoken[4],
+			idprimenet_namespace_hivecodes[i].pubkeytoken[5],
+			idprimenet_namespace_hivecodes[i].pubkeytoken[6],
+			idprimenet_namespace_hivecodes[i].pubkeytoken[7]);
+		char *ns = malloc(16 + 1 + strlen(idprimenet_namespace_hivecodes[i].namespace) + 1);
+		if (ns == NULL) return SC_ERROR_OUT_OF_MEMORY;
+		strcpy(ns, pubkeytokenstr);
+		strcat(ns, ".");
+		strcat(ns, idprimenet_namespace_hivecodes[i].namespace);
+
+		if (!EVP_DigestInit_ex(mdctx, md, NULL))
+			goto err;
+		if (!EVP_DigestUpdate(mdctx, ns, strlen(ns)))
+			goto err;
+		if (!EVP_DigestFinal_ex(mdctx, md_value, &md_len))
+			goto err;
+
+		printf("Namespace hivecode for %s: 00%02X%02X%02X\n", ns, md_value[2], md_value[1], md_value[0]);
+
+		idprimenet_namespace_hivecodes[i].hivecode[0] = md_value[2];
+		idprimenet_namespace_hivecodes[i].hivecode[1] = md_value[1];
+		idprimenet_namespace_hivecodes[i].hivecode[2] = md_value[0];
+	}
+
+	rv = SC_SUCCESS;
+
+err:
+	EVP_MD_CTX_free(mdctx);
+	return rv;
+}
+
 static int namespace_to_hivecode(const char *namespace, u8 hivecode[4]) {
 	for (unsigned int i = 0; idprimenet_namespace_hivecodes[i].namespace; i++) {
 		if (!strcmp(idprimenet_namespace_hivecodes[i].namespace, namespace)) {
-			hivecode[0] = idprimenet_namespace_hivecodes[i].hivecode[0];
-			hivecode[1] = idprimenet_namespace_hivecodes[i].hivecode[1];
-			hivecode[2] = idprimenet_namespace_hivecodes[i].hivecode[2];
-			hivecode[3] = idprimenet_namespace_hivecodes[i].hivecode[3];
+			hivecode[0] = 0;
+			hivecode[1] = idprimenet_namespace_hivecodes[i].hivecode[0];
+			hivecode[2] = idprimenet_namespace_hivecodes[i].hivecode[1];
+			hivecode[3] = idprimenet_namespace_hivecodes[i].hivecode[2];
 			return 0;
 		}
 	}
@@ -309,11 +393,11 @@ static int namespace_to_hivecode(const char *namespace, u8 hivecode[4]) {
 }
 
 static const idprimenet_namespace_hivecode_t *hivecode_to_namespace(const u8 hivecode[4]) {
+	if (hivecode[0] != 0) return NULL;
 	for (unsigned int i = 0; idprimenet_namespace_hivecodes[i].namespace; i++) {
-		if (idprimenet_namespace_hivecodes[i].hivecode[0] == hivecode[0]
-		 && idprimenet_namespace_hivecodes[i].hivecode[1] == hivecode[1]
-		 && idprimenet_namespace_hivecodes[i].hivecode[2] == hivecode[2]
-		 && idprimenet_namespace_hivecodes[i].hivecode[3] == hivecode[3]) {
+		if (idprimenet_namespace_hivecodes[i].hivecode[0] == hivecode[1]
+		 && idprimenet_namespace_hivecodes[i].hivecode[1] == hivecode[2]
+		 && idprimenet_namespace_hivecodes[i].hivecode[2] == hivecode[3]) {
 			return &idprimenet_namespace_hivecodes[i];
 		}
 	}
@@ -1777,10 +1861,18 @@ static int idprimenet_get_serialnr(struct sc_card *card, struct sc_serial_number
 }
 
 static int idprimenet_init(struct sc_card *card) {
+	int rv = SC_SUCCESS;
+
 	LOG_FUNC_CALLED(card->ctx);
 
 	card->name = "Gemalto IDPrime.NET card";
 	card->drv_data = NULL;
+
+	rv = generate_ns_hivecodes();
+	if (rv != SC_SUCCESS) {
+		sc_log(card->ctx, "Failed to generate namespace hivecode cache\n");
+		LOG_FUNC_RETURN(card->ctx, rv);
+	}
 
 	idprimenet_key_sizes_t keysizes = {0, 0, 0, 0};
 	dotnet_exception_t *exception = NULL;
@@ -1792,7 +1884,7 @@ static int idprimenet_init(struct sc_card *card) {
 	if (exception != NULL) {
 		sc_log(card->ctx, "Exception %s retrieving keysizes\n", exception->type->type_str);
 		dotnet_exception_destroy(exception);
-		LOG_FUNC_RETURN(card->ctx, SC_ERROR_CARD_CMD_FAILED);
+		rv = SC_ERROR_CARD_CMD_FAILED
 	} else {
 		for (unsigned int keysize = keysizes.minimumBitLen;
 		     keysize <= keysizes.maximumBitLen;
@@ -1800,7 +1892,7 @@ static int idprimenet_init(struct sc_card *card) {
 			_sc_card_add_rsa_alg(card, keysize, IDPRIMENET_CARD_DEFAULT_FLAGS,/* exponent - TODO: understand */ 0);
 	}
 
-	LOG_FUNC_RETURN(card->ctx, SC_SUCCESS);
+	LOG_FUNC_RETURN(card->ctx, rv);
 }
 
 static int idprimenet_card_ctl(struct sc_card *card, unsigned long cmd, void *ptr) {
