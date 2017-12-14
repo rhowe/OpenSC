@@ -56,10 +56,6 @@
  * of the relevant assemblies were
  */
 
-static const idprimenet_type_hivecode_t idprimenet_type_none = {
-	IDPRIME_TYPE_NONE,                     NULL,                        {0,    0   }
-};
-
 static const idprimenet_type_hivecode_t idprimenet_type_hivecodes[] = {
 	{IDPRIME_TYPE_SYSTEM_VOID,              "System.Void",              {0xCE, 0xB1}},
 	{IDPRIME_TYPE_SYSTEM_INT32,             "System.Int32",             {0x61, 0xC0}},
@@ -229,7 +225,7 @@ dotnet_exception_t *dotnet_exception_new() {
 	dotnet_exception_t *res = malloc(sizeof(dotnet_exception_t));
 	if (res == NULL) return NULL;
 
-	res->type = &idprimenet_type_none;
+	res->type = NULL;
 	res->message = NULL;
 
 	return res;
