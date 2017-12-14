@@ -365,8 +365,9 @@ static int type_to_hivecode(const char *type, u8 hivecode[2]) {
 	u8 is_array;
 	const char *hivetype = strrchr(type, '.');
 	size_t type_len;
+	int rv = SC_ERROR_INTERNAL;
 
-	if (!type) return 1;
+	if (!type) return SC_ERROR_INVALID_ARGUMENTS;
 
 	type_len = strlen(type);
 
@@ -374,18 +375,29 @@ static int type_to_hivecode(const char *type, u8 hivecode[2]) {
 
 	hivetype = hivetype == NULL ? type : hivetype + 1;
 
-	/* TODO: Check OpenSSL return codes */
 	md = EVP_md5();
+	if (md == NULL || md == NID_undef) {
+		return SC_ERROR_INTERNAL;
+	}
 	mdctx = EVP_MD_CTX_new();
-	EVP_DigestInit_ex(mdctx, md, NULL);
-	EVP_DigestUpdate(mdctx, hivetype, strlen(hivetype) - (is_array ? 2 : 0));
-	EVP_DigestFinal_ex(mdctx, md_value, &md_len);
-	EVP_MD_CTX_free(mdctx);
+	if (mdctx == NULL) {
+		return SC_ERROR_INTERNAL;
+	}
+	if (!EVP_DigestInit_ex(mdctx, md, NULL))
+		goto err;
+	if (!EVP_DigestUpdate(mdctx, hivetype, strlen(hivetype) - (is_array ? 2 : 0)))
+		goto err;
+	if (!EVP_DigestFinal_ex(mdctx, md_value, &md_len))
+		goto err;
 
 	hivecode[0] = md_value[1];
 	hivecode[1] = is_array ? md_value[0] + 1 : md_value[0]; // TODO: What if it's 0xff?
 
-	return 0;
+	rv = SC_SUCCESS;
+
+err:
+	EVP_MD_CTX_free(mdctx);
+	return rv;
 }
 
 static int method_to_hivecode(const char *method, u8 hivecode[2]) {
@@ -393,21 +405,33 @@ static int method_to_hivecode(const char *method, u8 hivecode[2]) {
 	const EVP_MD *md;
 	u8 md_value[EVP_MAX_MD_SIZE];
 	unsigned int md_len;
+	int rv = SC_ERROR_INTERNAL;
 
-	if (!method) return 1;
+	if (!method) return SC_ERROR_INVALID_ARGUMENTS;
 
-	/* TODO: Check OpenSSL return codes */
 	md = EVP_md5();
+	if (md == NULL || md == NID_undef) {
+		return SC_ERROR_INTERNAL;
+	}
 	mdctx = EVP_MD_CTX_new();
-	EVP_DigestInit_ex(mdctx, md, NULL);
-	EVP_DigestUpdate(mdctx, method, strlen(method));
-	EVP_DigestFinal_ex(mdctx, md_value, &md_len);
-	EVP_MD_CTX_free(mdctx);
+	if (mdctx == NULL) {
+		return SC_ERROR_INTERNAL;
+	}
+	if (!EVP_DigestInit_ex(mdctx, md, NULL))
+		goto err;
+	if (!EVP_DigestUpdate(mdctx, method, strlen(method)))
+		goto err;
+	if (!EVP_DigestFinal_ex(mdctx, md_value, &md_len))
+		goto err;
 
 	hivecode[0] = md_value[1];
 	hivecode[1] = md_value[0];
 
-	return 0;
+	rv = SC_SUCCESS;
+
+err:
+	EVP_MD_CTX_free(mdctx);
+	return rv;
 }
 
 static int idprimenet_apdu_to_string(
