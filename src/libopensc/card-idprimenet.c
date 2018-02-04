@@ -976,12 +976,7 @@ static int idprimenet_parse_exception(dotnet_op_response_t *response, const unsi
 
 static int idprimenet_op_call(
 		struct sc_card *card,
-		u8 port_msb,
-		u8 port_lsb,
-		char *namespace,
-		char *type,
-		char *method,
-		char *service,
+		const dotnet_op_t *op,
 		dotnet_op_response_t *response,
 		idprimenet_namespace_t expected_response_ns,
 		idprimenet_type_t expected_response_type,
@@ -991,7 +986,6 @@ static int idprimenet_op_call(
 	va_list args;
 	int res;
 	int rv = SC_SUCCESS;
-	dotnet_op_t op;
 	sc_apdu_t *apdu;
 	u8 *resp = NULL;
 	size_t resplen = 255; //FIXME: Be more flexible
@@ -1007,15 +1001,8 @@ static int idprimenet_op_call(
 	resp = malloc(resplen);
 	if (resp == NULL) LOG_FUNC_RETURN(card->ctx, SC_ERROR_OUT_OF_MEMORY);
 
-	op.port[0] = port_msb;
-	op.port[1] = port_lsb;
-	op.namespace = namespace;
-	op.type = type,
-	op.method = method,
-	op.service = service;
-
 	va_start(args, n_args);
-	apdu = dotnet_op_to_apdu(card, &op, n_args, args);
+	apdu = dotnet_op_to_apdu(card, op, n_args, args);
 	va_end(args);
 	if (!apdu) LOG_FUNC_RETURN(card->ctx, SC_ERROR_INVALID_ARGUMENTS);
 
@@ -1031,7 +1018,7 @@ static int idprimenet_op_call(
 		goto out;
 	}
 
-	if (!strcmp("MSCM", service) && apdu->resplen < resp_header_size) {
+	if (!strcmp("MSCM", op->service) && apdu->resplen < resp_header_size) {
 		if (expected_response_type == IDPRIME_TYPE_SYSTEM_VOID) {
 			// No data expected in the response
 			response->data_type = IDPRIME_TYPE_SYSTEM_VOID;
@@ -1044,7 +1031,7 @@ static int idprimenet_op_call(
 		goto out;
 	}
 
-	if (!strcmp("MSCM", service)) {
+	if (!strcmp("MSCM", op->service)) {
 		// MSCM has its own special response format
 		if (idprimenet_parse_exception(response, apdu->resp, apdu->resplen)) {
 			if (apdu->resplen < resp_header_size) {
@@ -1135,6 +1122,13 @@ int idprimenet_op_mscm_getchallenge(
 		dotnet_exception_t **exception,
 		u8 *challenge,
 		size_t *challenge_len) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Byte[] GetChallenge()",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response;
 	int rv;
 
@@ -1151,11 +1145,7 @@ int idprimenet_op_mscm_getchallenge(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Byte[] GetChallenge()",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
@@ -1187,6 +1177,13 @@ int idprimenet_op_contentmanager_getserialnumber(
 		dotnet_exception_t **exception,
 		u8 *serialnumber,
 		size_t *serialnumber_len) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x01},
+		.namespace = "SmartCard",
+		.type      = "SmartCard.ContentManager",
+		.method    = "System.Byte[] get_SerialNumber()",
+		.service   = "ContentManager",
+	};
 	dotnet_op_response_t *response;
 	int rv;
 
@@ -1203,11 +1200,7 @@ int idprimenet_op_contentmanager_getserialnumber(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x01,
-		"SmartCard",
-		"SmartCard.ContentManager",
-		"System.Byte[] get_SerialNumber()",
-		"ContentManager",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
@@ -1243,6 +1236,13 @@ int idprimenet_op_mscm_getserialnumber(
 		dotnet_exception_t **exception,
 		u8 *serialnumber,
 		size_t *serialnumber_len) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Byte[] get_SerialNumber()",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response;
 	int rv;
 
@@ -1259,11 +1259,7 @@ int idprimenet_op_mscm_getserialnumber(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Byte[] get_SerialNumber()",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
@@ -1295,6 +1291,13 @@ int idprimenet_op_mscm_externalauthenticate(
 		dotnet_exception_t **exception,
 		u8 *authresp,
 		size_t authresp_len) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Void ExternalAuthenticate(System.Byte[])",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1316,11 +1319,7 @@ int idprimenet_op_mscm_externalauthenticate(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Void ExternalAuthenticate(System.Byte[])",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_VOID,
@@ -1347,6 +1346,13 @@ int idprimenet_op_mscm_isauthenticated (
 		dotnet_exception_t **exception,
 		u8 role,
 		u8 *answer) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Boolean IsAuthenticated(System.Byte)",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1365,11 +1371,7 @@ int idprimenet_op_mscm_isauthenticated (
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Boolean IsAuthenticated(System.Byte)",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BOOLEAN,
@@ -1400,6 +1402,13 @@ err:
 int idprimenet_op_mscm_forcegarbagecollector(
 		struct sc_card *card,
 		dotnet_exception_t **exception) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Void ForceGarbageCollector()",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1412,11 +1421,7 @@ int idprimenet_op_mscm_forcegarbagecollector(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Void ForceGarbageCollector()",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_VOID,
@@ -1443,6 +1448,13 @@ int idprimenet_op_mscm_getversion(
 		dotnet_exception_t **exception,
 		char *version_str,
 		size_t *version_str_len) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.String get_Version()",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1455,11 +1467,7 @@ int idprimenet_op_mscm_getversion(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05, /* port */
-		"CardModuleService",
-		"CardModuleService",
-		"System.String get_Version()", /* method */
-		"MSCM", /* service name */
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_STRING,
@@ -1491,6 +1499,13 @@ int idprimenet_op_mscm_getfiles(
 		dotnet_exception_t **exception,
 		char *path,
 		idprimenet_string_array_t **dest) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.String[] GetFiles(System.String)",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1511,11 +1526,7 @@ int idprimenet_op_mscm_getfiles(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05, /* port */
-		"CardModuleService",
-		"CardModuleService",
-		"System.String[] GetFiles(System.String)", /* method */
-		"MSCM", /* service name */
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_STRING_ARRAY,
@@ -1546,6 +1557,13 @@ int idprimenet_op_mscm_readfile(
 		char *path,
 		u8 *data,
 		size_t *data_len) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Byte[] ReadFile(System.String,System.Int32)",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response;
 	int rv;
 
@@ -1574,11 +1592,7 @@ int idprimenet_op_mscm_readfile(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Byte[] ReadFile(System.String,System.Int32)",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE_ARRAY,
@@ -1611,6 +1625,13 @@ int idprimenet_op_mscm_maxpinretrycounter(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		u8 *maxpinretrycounter) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Byte MaxPinRetryCounter()",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1624,11 +1645,7 @@ int idprimenet_op_mscm_maxpinretrycounter(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05, /* port */
-		"CardModuleService",
-		"CardModuleService",
-		"System.Byte MaxPinRetryCounter()", /* method */
-		"MSCM", /* service name */
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_BYTE,
@@ -1663,6 +1680,13 @@ int idprimenet_op_mscm_queryfreespace(
 		dotnet_exception_t **exception,
 		int *freespace,
 		size_t *freespace_len) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Int32[] QueryFreeSpace()",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1677,11 +1701,7 @@ int idprimenet_op_mscm_queryfreespace(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Int32[] QueryFreeSpace()",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
@@ -1731,6 +1751,13 @@ int idprimenet_op_mscm_querykeysizes(
 		struct sc_card *card,
 		dotnet_exception_t **exception,
 		idprimenet_key_sizes_t *key_sizes) {
+	const dotnet_op_t op = {
+		.port      = {0x00, 0x05},
+		.namespace = "CardModuleService",
+		.type      = "CardModuleService",
+		.method    = "System.Int32[] QueryKeySizes()",
+		.service   = "MSCM",
+	};
 	dotnet_op_response_t *response = dotnet_op_response_new();
 	int rv;
 
@@ -1744,11 +1771,7 @@ int idprimenet_op_mscm_querykeysizes(
 
 	rv = idprimenet_op_call(
 		card,
-		0, 0x05,
-		"CardModuleService",
-		"CardModuleService",
-		"System.Int32[] QueryKeySizes()",
-		"MSCM",
+		&op,
 		response,
 		IDPRIME_NS_SYSTEM,
 		IDPRIME_TYPE_SYSTEM_INT32_ARRAY,
