@@ -183,6 +183,7 @@ static int get_card_version(struct sc_card *card) {
 static int get_files(struct sc_card *card, char *path) {
 	dotnet_exception_t *exception = NULL;
 	struct idprimenet_string_array *results = NULL;
+	int rc = EXIT_SUCCESS;
 
 	if (idprimenet_op_mscm_getfiles(card, &exception, path, &results)) {
 		util_error("Failure querying files for '%s'\n", path);
@@ -197,23 +198,45 @@ static int get_files(struct sc_card *card, char *path) {
 	} else {
 		printf("Files on card in '%s':\n", path);
 		for (struct idprimenet_string_array *elem = results; elem != NULL; elem = elem->next) {
-			size_t buf_len = 16384;
+			char *filepath = strdup(elem->value);
+			size_t buf_len = 16384, path_len = strlen(path);
 			u8 buf[buf_len];
-			if (idprimenet_op_mscm_readfile(card, &exception, elem->value, buf, &buf_len)) {
+
+			if (*path) {
+				/* We need to prefix the supplied path with <dir>\ */
+				free(filepath);
+				filepath = malloc(strlen(path) + 1 /* separator */ + strlen(elem->value) + 1 /* terminator */);
+				if (filepath == NULL) {
+					util_error("malloc failure in get_files()");
+					rc = EXIT_FAILURE;
+					goto err;
+				}
+				memcpy(filepath, path, path_len);
+				filepath[path_len] = '\\';
+				strcpy(filepath + path_len + 1, elem->value);
+			}
+			if (idprimenet_op_mscm_readfile(card, &exception, filepath, buf, &buf_len)) {
 				util_error("Failure reading '%s'\n", elem->value);
-				return EXIT_FAILURE;
+				rc = EXIT_FAILURE;
+				free(filepath);
+				goto err;
 			}
 			if (exception != NULL) {
 				// TODO: Mention which file!
+				printf("File: %s", filepath);
 				DOTNET_TOOL_PRINT_EXCEPTION("Exception reading file", exception);
 				dotnet_exception_destroy(exception);
-				return EXIT_FAILURE;
+				rc = EXIT_FAILURE;
+				free(filepath);
+				goto err;
 			} else {
-				printf(" - %s (%ld bytes)\n", elem->value, buf_len);
+				printf(" - %s (%ld bytes)\n", filepath, buf_len);
+				free(filepath);
 			}
 		}
+err:
 		idprimenet_string_array_destroy(results);
-		return EXIT_SUCCESS;
+		return rc;
 	}
 }
 
