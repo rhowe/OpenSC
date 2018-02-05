@@ -191,7 +191,11 @@ static int get_files(struct sc_card *card, char *path) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		DOTNET_TOOL_PRINT_EXCEPTION("Exception querying files", exception);
+		if (exception->type->type == IDPRIME_EX_TYPE_SYSTEM_IO_DIRECTORYNOTFOUNDEXCEPTION) {
+			printf("'%s': Directory not found on card\n", path);
+		} else {
+			DOTNET_TOOL_PRINT_EXCEPTION("Exception querying files", exception);
+		}
 		idprimenet_string_array_destroy(results);
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
@@ -302,7 +306,13 @@ static int read_file(struct sc_card *card, char *path) {
 		return EXIT_FAILURE;
 	}
 	if (exception != NULL) {
-		DOTNET_TOOL_PRINT_EXCEPTION("Exception reading file", exception);
+		switch (exception->type->type) {
+		case IDPRIME_EX_TYPE_SYSTEM_IO_FILENOTFOUNDEXCEPTION:
+			printf("'%s': File not found\n", path);
+			break;
+		default:
+			DOTNET_TOOL_PRINT_EXCEPTION("Exception reading file", exception);
+		}
 		dotnet_exception_destroy(exception);
 		return EXIT_FAILURE;
 	} else {
