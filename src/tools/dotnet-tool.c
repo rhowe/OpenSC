@@ -199,21 +199,20 @@ static int get_files(struct sc_card *card, char *path) {
 		printf("Files on card in '%s':\n", path);
 		for (struct idprimenet_string_array *elem = results; elem != NULL; elem = elem->next) {
 			char *filepath = strdup(elem->value);
-			size_t buf_len = 16384, path_len = strlen(path);
+			size_t buf_len = 16384;
 			u8 buf[buf_len];
 
 			if (*path) {
 				/* We need to prefix the supplied path with <dir>\ */
+				size_t filepathlen = strlen(path) + 1 /* separator */ + strlen(elem->value) + 1 /* terminator */;
 				free(filepath);
-				filepath = malloc(strlen(path) + 1 /* separator */ + strlen(elem->value) + 1 /* terminator */);
+				filepath = malloc(filepathlen);
 				if (filepath == NULL) {
 					util_error("malloc failure in get_files()");
 					rc = EXIT_FAILURE;
 					goto err;
 				}
-				memcpy(filepath, path, path_len);
-				filepath[path_len] = '\\';
-				strcpy(filepath + path_len + 1, elem->value);
+				snprintf(filepath, filepathlen, "%s\\%s", path, elem->value);
 			}
 			if (idprimenet_op_mscm_readfile(card, &exception, filepath, buf, &buf_len)) {
 				util_error("Failure reading '%s'\n", elem->value);
