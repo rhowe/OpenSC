@@ -365,7 +365,7 @@ static int generate_ns_hivecodes() {
 		if (!EVP_DigestFinal_ex(mdctx, md_value, &md_len))
 			goto err;
 
-		printf("Namespace hivecode for %s: 00%02X%02X%02X\n", ns, md_value[2], md_value[1], md_value[0]);
+//		printf("Namespace hivecode for %s: 00%02X%02X%02X\n", ns, md_value[2], md_value[1], md_value[0]);
 
 		idprimenet_namespace_hivecodes[i].hivecode[0] = md_value[2];
 		idprimenet_namespace_hivecodes[i].hivecode[1] = md_value[1];
@@ -1907,7 +1907,7 @@ static int idprimenet_init(struct sc_card *card) {
 	if (exception != NULL) {
 		sc_log(card->ctx, "Exception %s retrieving keysizes\n", exception->type->type_str);
 		dotnet_exception_destroy(exception);
-		rv = SC_ERROR_CARD_CMD_FAILED
+		rv = SC_ERROR_CARD_CMD_FAILED;
 	} else {
 		for (unsigned int keysize = keysizes.minimumBitLen;
 		     keysize <= keysizes.maximumBitLen;
