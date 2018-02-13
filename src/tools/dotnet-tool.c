@@ -24,6 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <openssl/evp.h>
+
 #include "common/compat_getopt.h"
 #include "libopensc/opensc.h"
 #include "libopensc/asn1.h"
@@ -55,11 +57,13 @@ static char *opt_get_files_path = NULL;
 static int opt_get_free_space = 0;
 static int opt_get_pin_retries = 0;
 static char *opt_read_file_path = NULL;
+static u8 *opt_challenge_response = NULL;
 
 static const char *app_name = "dotnet-tool";
 
 enum {
 	OPT_BASE = 0x100,
+	OPT_CHALLENGE_AUTH,
 	OPT_EXT_AUTH,
 	OPT_FORCE_GC,
 	OPT_GET_CARD_VERSION,
@@ -71,24 +75,26 @@ enum {
 };
 
 static const struct option options[] = {
-	{ "reader",                required_argument, NULL, 'r'                  },
-	{ "external-authenticate", no_argument,       NULL, OPT_EXT_AUTH         },
-	{ "force-gc",              no_argument,       NULL, OPT_FORCE_GC         },
-	{ "get-card-version",      no_argument,       NULL, OPT_GET_CARD_VERSION },
-	{ "get-challenge",         no_argument,       NULL, OPT_GET_CHALLENGE    },
-	{ "get-files",             required_argument, NULL, OPT_GET_FILES        },
-	{ "get-free-space",        no_argument,       NULL, OPT_GET_FREESPACE    },
-	{ "get-pin-retries",       no_argument,       NULL, OPT_GET_PIN_RETRIES  },
-	{ "read-file",             required_argument, NULL, OPT_READ_FILE        },
-	{ "wait",                  no_argument,       NULL, 'w'                  },
-	{ "help",                  no_argument,       NULL, 'h'                  },
-	{ "verbose",               no_argument,       NULL, 'v'                  },
-	{ "version",               no_argument,       NULL, 'V'                  },
+	{ "reader",                 required_argument, NULL, 'r'                  },
+	{ "challenge-authenticate", required_argument, NULL, OPT_CHALLENGE_AUTH   },
+	{ "external-authenticate",  no_argument,       NULL, OPT_EXT_AUTH         },
+	{ "force-gc",               no_argument,       NULL, OPT_FORCE_GC         },
+	{ "get-card-version",       no_argument,       NULL, OPT_GET_CARD_VERSION },
+	{ "get-challenge",          no_argument,       NULL, OPT_GET_CHALLENGE    },
+	{ "get-files",              required_argument, NULL, OPT_GET_FILES        },
+	{ "get-free-space",         no_argument,       NULL, OPT_GET_FREESPACE    },
+	{ "get-pin-retries",        no_argument,       NULL, OPT_GET_PIN_RETRIES  },
+	{ "read-file",              required_argument, NULL, OPT_READ_FILE        },
+	{ "wait",                   no_argument,       NULL, 'w'                  },
+	{ "help",                   no_argument,       NULL, 'h'                  },
+	{ "verbose",                no_argument,       NULL, 'v'                  },
+	{ "version",                no_argument,       NULL, 'V'                  },
 	{ NULL, 0, NULL, 0 }
 };
 
 static const char *option_help[] = {
 /* r */	"Use reader number <arg> [0]",
+/*   */	"Challenge/response authentication (default admin key is 000000000000)",
 /*   */	"External authentication",
 /*   */	"Force garbage collection on the card",
 /*   */	"Get card version number",
@@ -103,6 +109,49 @@ static const char *option_help[] = {
 /* V */	"Show version number"
 };
 
+u8 hexchar2u8(char c) {
+	switch(c) {
+	case '0': return 0;
+	case '1': return 1;
+	case '2': return 2;
+	case '3': return 3;
+	case '4': return 4;
+	case '5': return 5;
+	case '6': return 6;
+	case '7': return 7;
+	case '8': return 8;
+	case '9': return 9;
+	case 'a': case 'A': return 10;
+	case 'b': case 'B': return 11;
+	case 'c': case 'C': return 12;
+	case 'd': case 'D': return 13;
+	case 'e': case 'E': return 14;
+	case 'f': case 'F': return 15;
+	default: return 255;
+	}
+}
+
+u8 *hex2bytes(const char *str) {
+	u8 *rv;
+	size_t str_len = strlen(str);
+
+	if (str == NULL) return NULL;
+	if (str_len % 2 != 0) return NULL;
+	if (str_len > 1024) return NULL; // This isn't a very serious function
+
+	rv = malloc(str_len / 2);
+	for (unsigned int i = 0; i < str_len; i+=2) {
+		u8 n1 = hexchar2u8(str[i    ]);
+		u8 n2 = hexchar2u8(str[i + 1]);
+		if (n1 > 15 || n2 > 15) {
+			free(rv);
+			return NULL;
+		}
+		rv[i/2] = n1 << 8 | n2;
+	}
+	return rv;
+}
+
 
 static void show_version(void)
 {
@@ -111,6 +160,55 @@ static void show_version(void)
 		"\n"
 		"Copyright (c) 2017 Russell Howe <rhowe.opensc@siksai.co.uk>\n"
 		"Licensed under LGPL v2\n");
+}
+
+static int auth_challenge_response(struct sc_card *card, u8 *adminkey) {
+	dotnet_exception_t *exception = NULL;
+	u8 challenge[255];
+	size_t challenge_len = 255;
+	if (idprimenet_op_mscm_getchallenge(card, &exception, challenge, &challenge_len)) {
+		util_error("Failure retrieving challenge\n");
+		return EXIT_FAILURE;
+	}
+	if (exception != NULL) {
+		DOTNET_TOOL_PRINT_EXCEPTION("Exception retrieving challenge", exception);
+		dotnet_exception_destroy(exception);
+		return EXIT_FAILURE;
+	} else {
+		// Do some 3des stuff - equivalent to openssl des3 -des-ede3-cbc -nopad -K "$adminkey" -
+		// OpenSSL EVP_des_ede3_cbc
+		EVP_CIPHER_CTX *ctx;
+		u8 *authresp = malloc(challenge_len);
+		int authresp_len = (challenge_len > 255 ? 255 : challenge_len); // dumb overflow prevention
+		int tmplen = 0;
+
+		ctx = EVP_CIPHER_CTX_new();
+		EVP_EncryptInit_ex(ctx, EVP_des_ede3_cbc(), NULL, adminkey, NULL);
+		EVP_CIPHER_CTX_set_padding(ctx, 0);
+		if (!EVP_EncryptUpdate(ctx, authresp, &authresp_len, challenge, challenge_len)) {
+			free(authresp);
+			util_error("Error encrypting challenge");
+			return 0;
+		}
+		if (!EVP_EncryptFinal_ex(ctx, authresp + authresp_len, &tmplen)) {
+			util_error("Error finalising challenge encryption");
+			return 0;
+		}
+		authresp_len += tmplen;
+		EVP_CIPHER_CTX_free(ctx);
+
+		if (idprimenet_op_mscm_externalauthenticate(card, &exception, authresp, authresp_len)) {
+			util_error("Failure sending auth response\n");
+			return EXIT_FAILURE;
+		}
+		if (exception != NULL) {
+			DOTNET_TOOL_PRINT_EXCEPTION("Exception sending auth response", exception);
+			dotnet_exception_destroy(exception);
+			return EXIT_FAILURE;
+		}
+	}
+	return EXIT_SUCCESS;
+
 }
 
 static int external_authenticate(struct sc_card *card) {
@@ -344,6 +442,9 @@ static int decode_options(int argc, char **argv)
 		case 'w':
 			opt_wait = 1;
 			break;
+		case OPT_CHALLENGE_AUTH:
+			opt_challenge_response = hex2bytes(optarg);
+			break;
 		case OPT_EXT_AUTH:
 			opt_ext_auth = 1;
 			break;
@@ -440,6 +541,11 @@ int main(int argc, char **argv)
 	if (opt_get_card_version) {
 		actions++;
 		exit_status |= get_card_version(card);
+	}
+
+	if (opt_challenge_response != NULL) {
+		actions++;
+		exit_status |= auth_challenge_response(card, opt_challenge_response);
 	}
 
 	if (opt_get_challenge) {
